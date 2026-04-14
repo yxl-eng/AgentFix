@@ -1,0 +1,6 @@
+2026-04-14 10:18:41 service=order-api env=prod request_id=req-5005
+GET /v1/orders/1
+Traceback (most recent call last):
+  File "/srv/order-api/app/account.py", line 10, in get_total_cents
+    return order.total_cents
+AttributeError: 'Order' object has no attribute 'total_cents'

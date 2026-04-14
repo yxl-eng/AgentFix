@@ -1,0 +1,6 @@
+2026-04-14 10:14:18 service=stats-api env=prod request_id=req-3003
+GET /v1/metrics
+Traceback (most recent call last):
+  File "/srv/stats-api/app/formatter.py", line 5, in label_count
+    return prefix + count
+TypeError: can only concatenate str (not "int") to str

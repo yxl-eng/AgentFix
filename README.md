@@ -1,0 +1,101 @@
+# AgentFix
+
+`agentfix` 是一个面向 Python 服务仓库的 Agent 化自动修复 CLI。它读取线上 Traceback 日志，结合本地 Git 仓库上下文定位代码，调用 OpenAI `Responses API` 做两阶段修复分析，生成最小补丁，执行语法检查与可用测试，并在成功后创建 GitHub Draft PR。
+
+## 当前能力
+
+- 输入来源：CLI 传入的日志文件
+- 目标仓库：本地 Python 服务仓库
+- 问题范围：`AttributeError`、`KeyError`、`TypeError`、`ImportError`、`ModuleNotFoundError`、`NoneType` 相关异常
+- 修复流程：日志解析 -> 仓库上下文收集 -> Analysis Agent -> Patch Agent -> `py_compile`/`pytest` -> Draft PR
+- 守护规则：最多改 3 个文件，禁止依赖文件改动，限制补丁行数
+
+## 安装
+
+需要 Python 3.11+。
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e .[dev]
+```
+
+复制示例配置：
+
+```bash
+copy agentfix.yaml.example agentfix.yaml
+```
+
+可选地用 `agentfix.local.yaml` 覆盖本地敏感配置，这个文件已被 `.gitignore` 忽略。
+
+设置环境变量：
+
+```powershell
+$env:OPENAI_API_KEY="..."
+$env:GITHUB_TOKEN="..."
+```
+
+## 使用
+
+分析一次事故：
+
+```bash
+agentfix analyze --repo C:\path\to\repo --log-file .\incident.log
+```
+
+执行完整修复流程：
+
+```bash
+agentfix run --repo C:\path\to\repo --log-file .\incident.log --base-branch main
+```
+
+只做验证：
+
+```bash
+agentfix validate --repo C:\path\to\repo --files app\service.py
+```
+
+基于已有结果创建 Draft PR：
+
+```bash
+agentfix pr --repo C:\path\to\repo --report-file .agentfix-artifacts\...\repair-result.json
+```
+
+## 配置
+
+`agentfix.yaml` 里主要包含：
+
+- `openai.model`：默认模型
+- `openai.base_url`：OpenAI 兼容接口地址
+- `openai.transport`：`auto` / `responses` / `chat_completions` / `rest_chat_completions`
+- `openai.analysis_reasoning_effort`：根因分析推理强度
+- `openai.patch_reasoning_effort`：补丁生成推理强度
+- `github.token_env_var`：GitHub Token 环境变量名
+- `guardrails.max_changed_files`：最大改动文件数
+- `guardrails.max_patch_lines`：最大补丁行数
+- `validation.python_executable`：Python 可执行文件
+- `validation.test_commands`：显式测试命令
+
+## 目录结构
+
+```text
+src/agentfix/
+  cli.py
+  incident_ingest.py
+  repo_context.py
+  patch_engine.py
+  validator.py
+  publisher.py
+  repair_orchestrator.py
+  providers/
+  services/
+tests/
+  fixtures/
+```
+
+## 注意事项
+
+- 当前仓库里只实现了 CLI 和核心模块，没有内置 HTTP 服务。
+- Publisher 默认直接用 GitHub REST API 创建 Draft PR，要求本地仓库已有 `origin` 远端且可推送。
+- 本机当前若没有 Python 运行时，将无法直接执行本工具；装好 Python 后即可按上面的步骤运行。
+- 对接火山方舟标准接口时，`base_url` 通常应为 `https://ark.cn-beijing.volces.com/api/v3`。若使用 Coding Plan，需要单独订阅对应套餐。

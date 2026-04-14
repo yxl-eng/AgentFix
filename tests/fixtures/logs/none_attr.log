@@ -1,0 +1,6 @@
+2026-04-14 10:11:12 service=user-api env=prod request_id=req-1001
+POST /v1/profile/email
+Traceback (most recent call last):
+  File "/srv/user-api/app/service.py", line 5, in get_user_email
+    return user.profile.email
+AttributeError: 'NoneType' object has no attribute 'profile'

@@ -1,0 +1,30 @@
+openai:
+  model: deepseek-v3-2-251201
+  api_key_env_var: ARK_API_KEY
+  base_url: https://ark.cn-beijing.volces.com/api/v3
+  transport: rest_chat_completions
+  analysis_reasoning_effort: medium
+  patch_reasoning_effort: high
+
+github:
+  token_env_var: GITHUB_TOKEN
+  api_base_url: https://api.github.com
+
+guardrails:
+  max_changed_files: 3
+  max_patch_lines: 250
+  min_confidence: 0.45
+  ignored_paths:
+    - .git
+    - .venv
+    - .pytest_cache
+    - __pycache__
+    - node_modules
+
+validation:
+  python_executable: C:\Users\86137\.conda\envs\LLM4Fin\python.exe
+  test_commands: []
+
+runtime:
+  artifact_root: .agentfix-artifacts
+  max_repair_attempts: 2

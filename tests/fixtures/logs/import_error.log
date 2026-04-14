@@ -1,0 +1,6 @@
+2026-04-14 10:16:24 service=hello-api env=prod request_id=req-4004
+GET /v1/greet
+Traceback (most recent call last):
+  File "/srv/hello-api/app/main.py", line 3, in <module>
+    from app.helpers import format_name
+ModuleNotFoundError: No module named 'app.helpers'

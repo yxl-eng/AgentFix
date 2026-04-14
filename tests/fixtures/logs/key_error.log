@@ -1,0 +1,6 @@
+2026-04-14 10:13:09 service=config-api env=prod request_id=req-2002
+GET /v1/config
+Traceback (most recent call last):
+  File "/srv/config-api/app/config.py", line 5, in read_user_id
+    return payload["user_id"]
+KeyError: 'user_id'
