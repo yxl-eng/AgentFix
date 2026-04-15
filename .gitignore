@@ -6,3 +6,4 @@ dist/
 *.pyc
 .agentfix-artifacts/
 agentfix.local.yaml
+*.egg-info/
