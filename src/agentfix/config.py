@@ -48,7 +48,7 @@ class GuardrailSettings(BaseModel):
 
 class ValidationSettings(BaseModel):
     python_executable: str = "python"
-    test_commands: list[str] = Field(default_factory=list)
+    test_commands: list[str] | None = None
 
     def resolved_python_executable(self) -> str:
         if self.python_executable != "python":

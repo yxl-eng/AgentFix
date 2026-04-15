@@ -60,7 +60,7 @@ class Validator:
         settings: ValidationSettings,
         python_executable: str,
     ) -> list[list[str] | str]:
-        if settings.test_commands:
+        if settings.test_commands is not None:
             return settings.test_commands
         if repo_context.metadata.test_candidates:
             return [[python_executable, "-m", "pytest", *repo_context.metadata.test_candidates]]

@@ -22,7 +22,7 @@ guardrails:
     - node_modules
 
 validation:
-  python_executable: C:\Users\86137\.conda\envs\LLM4Fin\python.exe
+  python_executable: python3
   test_commands: []
 
 runtime:
