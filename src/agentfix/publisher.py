@@ -72,7 +72,8 @@ class GitHubPublisher:
     def build_branch_name(self, incident: Incident) -> str:
         raw_id = incident.incident_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         short_exception = self._slugify(incident.exception_type or "unknown-error")
-        return f"agentfix/{self._slugify(raw_id)}/{short_exception}"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        return f"agentfix/{self._slugify(raw_id)}/{short_exception}-{timestamp}"
 
     def build_commit_message(self, incident: Incident) -> str:
         incident_id = incident.incident_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
