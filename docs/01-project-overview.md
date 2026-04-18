@@ -90,7 +90,7 @@ Feishu_code_reviewer/
                                                     ▼                      ▼
                                                通过 ✅                 失败 ❌
                                                     │                      │
-                                                    ▼                      ▼
+                                                    ▼                    ▼
                                             [Publisher]            重试（最多2次）
                                         创建 GitHub Draft PR
 ```

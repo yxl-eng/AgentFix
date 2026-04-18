@@ -8,6 +8,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from agentfix.config import GitHubSettings
 from agentfix.models import AnalysisResult, AppliedPatch, Incident, PullRequestResult, ValidationResult
 
@@ -110,6 +112,11 @@ class GitHubPublisher:
             f"{risks}\n"
         )
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
     def _create_pull_request(
         self,
         repo_path: Path,
