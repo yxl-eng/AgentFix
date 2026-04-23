@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -93,91 +94,87 @@ class RepairOrchestrator:
         last_failure: str | None = None
 
         for attempt in range(1, self.config.runtime.max_repair_attempts + 1):
-            workspace = self._copy_repo(source_repo)
-            attempt_context = self.collector.collect(workspace, incident, base_branch)
-            try:
-                proposal = self.patch_agent.propose(incident, analysis, attempt_context, feedback=feedback)
-                self._write_json(
-                    artifact_dir / f"attempt-{attempt}-proposal.json",
-                    proposal.model_dump(mode="json"),
-                )
-                allowed_paths = [
-                    target.path
-                    for target in analysis.candidate_targets[: self.config.guardrails.max_changed_files]
-                ]
-                applied_patch = self.patch_engine.apply(
-                    workspace,
-                    proposal,
-                    allowed_paths=allowed_paths,
-                    guardrails=self.config.guardrails,
-                )
-                if not applied_patch.changed_files:
-                    raise PatchGuardrailError("Patch proposal produced no file changes.")
-                self._write_text(artifact_dir / f"attempt-{attempt}.patch", applied_patch.diff_text)
-                validation = self.validator.validate(
-                    workspace,
-                    applied_patch.changed_files,
-                    attempt_context,
-                    self.config.validation,
-                )
-                last_validation = validation
-                self._write_json(
-                    artifact_dir / f"attempt-{attempt}-validation.json",
-                    validation.model_dump(mode="json"),
-                )
-            except PatchGuardrailError as exc:
-                feedback = [str(exc)]
-                last_failure = str(exc)
-                shutil.rmtree(workspace, ignore_errors=True)
-                continue
-            except Exception as exc:
-                feedback = [str(exc)]
-                last_failure = str(exc)
-                shutil.rmtree(workspace, ignore_errors=True)
-                continue
-
-            if not validation.is_success:
-                feedback = validation.failure_summary or ["Validation failed."]
-                last_failure = "; ".join(feedback)
-                shutil.rmtree(workspace, ignore_errors=True)
-                continue
-
-            pr_result = None
-            if publish:
+            with self._temporary_workspace(source_repo) as workspace:
+                attempt_context = self.collector.collect(workspace, incident, base_branch)
                 try:
-                    pr_result = self.publisher.publish(
-                        workspace,
-                        incident=incident,
-                        analysis=analysis,
-                        applied_patch=applied_patch,
-                        validation=validation,
-                        base_branch=base_branch,
-                        commit_title=proposal.commit_message_title,
-                    )
+                    proposal = self.patch_agent.propose(incident, analysis, attempt_context, feedback=feedback)
                     self._write_json(
-                        artifact_dir / f"attempt-{attempt}-pr.json",
-                        pr_result.model_dump(mode="json"),
+                        artifact_dir / f"attempt-{attempt}-proposal.json",
+                        proposal.model_dump(mode="json"),
                     )
-                except PublisherError as exc:
+                    allowed_paths = [
+                        target.path
+                        for target in analysis.candidate_targets[: self.config.guardrails.max_changed_files]
+                    ]
+                    applied_patch = self.patch_engine.apply(
+                        workspace,
+                        proposal,
+                        allowed_paths=allowed_paths,
+                        guardrails=self.config.guardrails,
+                    )
+                    if not applied_patch.changed_files:
+                        raise PatchGuardrailError("Patch proposal produced no file changes.")
+                    self._write_text(artifact_dir / f"attempt-{attempt}.patch", applied_patch.diff_text)
+                    validation = self.validator.validate(
+                        workspace,
+                        applied_patch.changed_files,
+                        attempt_context,
+                        self.config.validation,
+                    )
+                    last_validation = validation
+                    self._write_json(
+                        artifact_dir / f"attempt-{attempt}-validation.json",
+                        validation.model_dump(mode="json"),
+                    )
+                except PatchGuardrailError as exc:
+                    feedback = [str(exc)]
                     last_failure = str(exc)
+                    continue
+                except Exception as exc:
+                    feedback = [str(exc)]
+                    last_failure = str(exc)
+                    continue
 
-            result = RepairResult(
-                root_cause_summary=analysis.root_cause_summary,
-                changed_files=applied_patch.changed_files,
-                diff_summary=self.patch_engine.summarize_diff(applied_patch.diff_text),
-                syntax_check=validation.syntax_check,
-                tests_run=[item.command for item in validation.commands],
-                pr_url=pr_result.pr_url if pr_result else None,
-                status="pr_created" if pr_result else "validated",
-                analysis=analysis,
-                validation=validation,
-                artifact_dir=str(artifact_dir),
-                branch=pr_result.branch if pr_result else None,
-                failure_reason=last_failure,
-            )
-            self._write_result_bundle(artifact_dir, result)
-            shutil.rmtree(workspace, ignore_errors=True)
-            return result
+                if not validation.is_success:
+                    feedback = validation.failure_summary or ["Validation failed."]
+                    last_failure = "; ".join(feedback)
+                    continue
+
+                pr_result = None
+                if publish:
+                    try:
+                        pr_result = self.publisher.publish(
+                            workspace,
+                            incident=incident,
+                            analysis=analysis,
+                            applied_patch=applied_patch,
+                            validation=validation,
+                            base_branch=base_branch,
+                            commit_title=proposal.commit_message_title,
+                        )
+                        self._write_json(
+                            artifact_dir / f"attempt-{attempt}-pr.json",
+                            pr_result.model_dump(mode="json"),
+                        )
+                    except PublisherError as exc:
+                        last_failure = str(exc)
+
+                result = RepairResult(
+                    root_cause_summary=analysis.root_cause_summary,
+                    changed_files=applied_patch.changed_files,
+                    diff_summary=self.patch_engine.summarize_diff(applied_patch.diff_text),
+                    syntax_check=validation.syntax_check,
+                    tests_run=[item.command for item in validation.commands],
+                    pr_url=pr_result.pr_url if pr_result else None,
+                    status="pr_created" if pr_result else "validated",
+                    analysis=analysis,
+                    validation=validation,
+                    artifact_dir=str(artifact_dir),
+                    branch=pr_result.branch if pr_result else None,
+                    failure_reason=last_failure,
+                )
+                self._write_result_bundle(artifact_dir, result)
+                return result
 
         result = RepairResult(
             root_cause_summary=analysis.root_cause_summary,
@@ -201,16 +198,25 @@ class RepairOrchestrator:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         return artifact_dir
 
-    def _copy_repo(self, source_repo: Path) -> Path:
+    @contextmanager
+    def _temporary_workspace(self, source_repo: Path) -> Path:
+        """创建临时工作目录，使用完毕后自动清理"""
         target = Path(tempfile.mkdtemp(prefix="agentfix-"))
         destination = target / source_repo.name
-        shutil.copytree(
-            source_repo,
-            destination,
-            dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
-        )
-        return destination
+        try:
+            shutil.copytree(
+                source_repo,
+                destination,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
+            )
+            yield destination
+        finally:
+            # 清理临时目录
+            try:
+                shutil.rmtree(target)
+            except Exception:
+                pass  # 忽略清理错误
 
     def _write_result_bundle(self, artifact_dir: Path, result: RepairResult) -> None:
         self._write_json(artifact_dir / "repair-result.json", result.model_dump(mode="json"))
