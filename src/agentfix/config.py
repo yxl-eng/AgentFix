@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class OpenAISettings(BaseModel):
-    model: str = "gpt-5.2"
+    model: str = "deepseek-v3-2-251201"
     api_key_env_var: str = "OPENAI_API_KEY"
     api_key: str | None = None
     base_url: str | None = None

@@ -23,7 +23,6 @@ guardrails:
 
 validation:
   python_executable: python
-  test_commands: []
 
 runtime:
   artifact_root: .agentfix-artifacts
