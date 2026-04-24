@@ -6,6 +6,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from agentfix.providers.base import ModelProviderError, StructuredModelProvider, T
 
 
@@ -87,6 +89,11 @@ class OpenAIResponsesProvider(StructuredModelProvider):
 
         raise ModelProviderError(f"Unsupported provider transport mode: {self.transport}")
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
     def _generate_with_responses(
         self,
         *,
@@ -109,6 +116,11 @@ class OpenAIResponsesProvider(StructuredModelProvider):
             raise ModelProviderError("Responses API returned no structured output.")
         return parsed
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
     def _generate_with_chat_completions(
         self,
         *,
@@ -142,6 +154,11 @@ class OpenAIResponsesProvider(StructuredModelProvider):
         data = json.loads(json_text)
         return output_model.model_validate(data)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
     def _generate_with_rest_chat_completions(
         self,
         *,
@@ -186,6 +203,11 @@ class OpenAIResponsesProvider(StructuredModelProvider):
         data = json.loads(json_text)
         return output_model.model_validate(data)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
     def _post_json(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
         request = urllib.request.Request(
             url=url,
