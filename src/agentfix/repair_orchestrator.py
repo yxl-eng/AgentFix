@@ -224,6 +224,14 @@ class RepairOrchestrator:
 
     def _render_markdown_report(self, result: RepairResult) -> str:
         validation_lines = "\n".join(f"- `{command}`" for command in result.tests_run) or "- none"
+        validation_status = "not available"
+        if result.validation is not None:
+            if result.validation.tests_executed:
+                validation_status = "tests executed"
+            elif result.validation.tests_skipped_reason:
+                validation_status = f"tests skipped: {result.validation.tests_skipped_reason}"
+            else:
+                validation_status = "tests skipped"
         return (
             "# AgentFix Repair Report\n\n"
             f"- Status: `{result.status}`\n"
@@ -231,6 +239,9 @@ class RepairOrchestrator:
             f"- Changed files: {', '.join(result.changed_files) if result.changed_files else 'none'}\n"
             f"- PR URL: {result.pr_url or 'not created'}\n"
             f"- Failure reason: {result.failure_reason or 'none'}\n\n"
+            "## Validation Status\n"
+            f"- Syntax check: `{'passed' if result.syntax_check else 'failed'}`\n"
+            f"- Functional tests: {validation_status}\n\n"
             "## Validation Commands\n"
             f"{validation_lines}\n\n"
             "## Diff Summary\n"
