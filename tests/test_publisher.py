@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from agentfix.config import GitHubSettings
 from agentfix.models import AnalysisResult, AppliedPatch, Incident, RepairIntent, ValidationCommandResult, ValidationResult
 from agentfix.publisher import GitHubPublisher
@@ -43,7 +45,7 @@ def test_publisher_builds_branch_and_body() -> None:
     branch = publisher.build_branch_name(incident)
     body = publisher.build_pr_body(incident, analysis, applied, validation)
 
-    assert branch == "agentfix/inc-1001/attributeerror"
+    assert re.fullmatch(r"agentfix/inc-1001/attributeerror-\d{14}", branch)
     assert "## Error Summary" in body
     assert "`app/service.py`" in body
     assert "python -m py_compile app/service.py" in body
