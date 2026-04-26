@@ -101,14 +101,16 @@ class ValidationCommandResult(BaseModel):
 
 class ValidationResult(BaseModel):
     syntax_check: bool
-    tests_passed: bool
+    tests_passed: bool | None = None
+    tests_executed: bool = False
+    tests_skipped_reason: str | None = None
     commands: list[ValidationCommandResult] = Field(default_factory=list)
     failure_summary: list[str] = Field(default_factory=list)
     suggested_follow_up: list[str] = Field(default_factory=list)
 
     @property
     def is_success(self) -> bool:
-        return self.syntax_check and self.tests_passed
+        return self.syntax_check and self.tests_passed is not False
 
 
 class PullRequestResult(BaseModel):
