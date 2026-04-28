@@ -12,3 +12,6 @@ dist/
 .agentfix-state/
 agentfix.local.yaml
 *.egg-info/
+.codex
+.vscode
+openspec
