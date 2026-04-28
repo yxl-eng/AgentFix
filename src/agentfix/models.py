@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -134,3 +135,40 @@ class RepairResult(BaseModel):
     artifact_dir: str | None = None
     branch: str | None = None
     failure_reason: str | None = None
+    record_json_path: str | None = None
+    record_markdown_path: str | None = None
+    feishu_notified: bool | None = None
+
+
+class RepairEvent(BaseModel):
+    source: str
+    target: str
+    log_text: str = ""
+    log_file: str | None = None
+    incident_id: str | None = None
+    base_branch: str | None = None
+    delivery_id: str | None = None
+    issue_url: str | None = None
+    issue_title: str | None = None
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolCallRecord(BaseModel):
+    name: str
+    status: str
+    summary: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    outputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class RepairRecord(BaseModel):
+    incident_id: str
+    target: str
+    source: str
+    status: str
+    message: str
+    pr_url: str | None = None
+    record_json_path: str | None = None
+    record_markdown_path: str | None = None
+    repair_result: RepairResult | None = None
+    tool_calls: list[ToolCallRecord] = Field(default_factory=list)

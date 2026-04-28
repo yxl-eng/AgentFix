@@ -8,7 +8,20 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential
+except ImportError:  # pragma: no cover - fallback for minimal local doctor/validation environments
+    def retry(*args, **kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
+
+    def stop_after_attempt(*args, **kwargs):
+        return None
+
+    def wait_exponential(*args, **kwargs):
+        return None
 
 from agentfix.config import GitHubSettings
 from agentfix.models import AnalysisResult, AppliedPatch, Incident, PullRequestResult, ValidationResult

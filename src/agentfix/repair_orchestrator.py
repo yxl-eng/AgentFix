@@ -7,9 +7,9 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from agentfix.config import AppConfig
+from agentfix.config import AppConfig, TargetSettings
 from agentfix.incident_ingest import IncidentIngestor
-from agentfix.models import RepairResult, ValidationResult
+from agentfix.models import Incident, RepairResult, ValidationResult
 from agentfix.patch_engine import PatchEngine, PatchGuardrailError
 from agentfix.publisher import GitHubPublisher, PublisherError
 from agentfix.repo_context import RepoContextCollector
@@ -56,10 +56,18 @@ class RepairOrchestrator:
         changed_files: list[str],
         log_file: str | Path | None = None,
         base_branch: str = "main",
+        target_config: TargetSettings | None = None,
     ) -> ValidationResult:
         incident = self.ingestor.from_file(log_file) if log_file else self.ingestor.placeholder()
         repo_context = self.collector.collect(repo_path, incident, base_branch)
-        return self.validator.validate(repo_path, changed_files, repo_context, self.config.validation)
+        return self.validator.validate(
+            repo_path,
+            changed_files,
+            repo_context,
+            self.config.validation,
+            target_config=target_config,
+            incident=incident,
+        )
 
     def run(
         self,
@@ -68,9 +76,28 @@ class RepairOrchestrator:
         *,
         base_branch: str = "main",
         publish: bool = True,
+        target_config: TargetSettings | None = None,
     ) -> RepairResult:
         source_repo = Path(repo_path).resolve()
         incident = self.ingestor.from_file(log_file)
+        return self.run_incident(
+            source_repo,
+            incident,
+            base_branch=base_branch,
+            publish=publish,
+            target_config=target_config,
+        )
+
+    def run_incident(
+        self,
+        repo_path: str | Path,
+        incident: Incident,
+        *,
+        base_branch: str = "main",
+        publish: bool = True,
+        target_config: TargetSettings | None = None,
+    ) -> RepairResult:
+        source_repo = Path(repo_path).resolve()
         artifact_dir = self._create_artifact_dir(incident)
         repo_context = self.collector.collect(source_repo, incident, base_branch)
         analysis = self.analyzer.analyze(incident, repo_context)
@@ -120,6 +147,8 @@ class RepairOrchestrator:
                         applied_patch.changed_files,
                         attempt_context,
                         self.config.validation,
+                        target_config=target_config,
+                        incident=incident,
                     )
                     last_validation = validation
                     self._write_json(

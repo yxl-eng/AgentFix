@@ -6,7 +6,20 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential
+except ImportError:  # pragma: no cover - fallback for minimal local doctor/validation environments
+    def retry(*args, **kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
+
+    def stop_after_attempt(*args, **kwargs):
+        return None
+
+    def wait_exponential(*args, **kwargs):
+        return None
 
 from agentfix.providers.base import ModelProviderError, StructuredModelProvider, T
 

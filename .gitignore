@@ -1,10 +1,14 @@
 __pycache__/
 .pytest_cache/
+.pytest-tmp/
+.agentfix-pytest-tmp/
+tmp-pytest/
 .venv/
 venv/
 build/
 dist/
 *.pyc
 .agentfix-artifacts/
+.agentfix-state/
 agentfix.local.yaml
 *.egg-info/
