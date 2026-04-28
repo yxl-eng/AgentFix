@@ -52,6 +52,30 @@ targets:
   #     - method: GET
   #       url: http://localhost:3000/api/users/1
   #       expected_status: 200
+  #   generated_tests:
+  #     enabled: true
+  #     framework: auto
+  #     commit_when_stable: true
+  #     fallback_to_v2_on_failure: true
+
+  # fastapi-order-service:
+  #   repo_full_name: demo/fastapi-order-service
+  #   repo_path: demo_services/fastapi-order-service
+  #   base_branch: main
+  #   service_log_file: logs/app.log
+  #   start_command: uvicorn app.main:app --host 127.0.0.1 --port 8770
+  #   healthcheck_url: http://127.0.0.1:8770/health
+  #   test_commands:
+  #     - python -m pytest tests
+  #   verification_requests:
+  #     - method: GET
+  #       url: http://127.0.0.1:8770/health
+  #       expected_status: 200
+  #   generated_tests:
+  #     enabled: true
+  #     framework: auto
+  #     commit_when_stable: true
+  #     fallback_to_v2_on_failure: true
 
 feishu:
   webhook_url_env_var: FEISHU_WEBHOOK_URL

@@ -11,6 +11,7 @@ from agentfix.agent_server import AgentProcessor, AgentServer
 from agentfix.config import AppConfig, load_config
 from agentfix.event_state import EventStateStore
 from agentfix.feishu import FeishuNotifier
+from agentfix.generated_tests import FrameworkDetector, GeneratedTestAgent, GeneratedTestRunner, GeneratedTestValidator
 from agentfix.incident_ingest import IncidentIngestor
 from agentfix.patch_engine import PatchEngine
 from agentfix.publisher import GitHubPublisher
@@ -178,6 +179,10 @@ def build_orchestrator(config: AppConfig, *, require_model: bool = True) -> Repa
         patch_engine=PatchEngine(),
         validator=Validator(),
         publisher=GitHubPublisher(config.github),
+        generated_test_agent=GeneratedTestAgent(provider, config) if require_model else None,
+        framework_detector=FrameworkDetector(),
+        generated_test_runner=GeneratedTestRunner(),
+        generated_test_validator=GeneratedTestValidator(),
     )
 
 
@@ -232,6 +237,7 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
             "orchestrator": "RepairOrchestrator",
             "analysis_agent": "AnalysisAgent",
             "patch_agent": "PatchAgent",
+            "generated_test_agent": "GeneratedTestAgent",
             "validator": "Validator",
             "publisher": "GitHubPublisher",
             "model_provider": "OpenAIResponsesProvider",
@@ -242,6 +248,7 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
             "collect repo context",
             "analysis agent produces root cause and candidate files",
             "patch agent produces minimal file updates",
+            "generated test agent can add incident-specific regression tests before publishing",
             "patch engine enforces guardrails",
             "validator runs py_compile and optional pytest",
             "publisher creates branch, commit, push, and GitHub Draft PR",
@@ -259,6 +266,9 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
             "server_host": config.server.host,
             "server_port": config.server.port,
             "targets": sorted(config.targets),
+            "generated_tests_enabled_targets": sorted(
+                name for name, target in config.targets.items() if target.generated_tests.enabled
+            ),
             "records_root": config.records.root,
         },
         "credentials": {

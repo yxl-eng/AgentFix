@@ -37,6 +37,14 @@ class RepairRecordWriter:
         validation = "not available"
         if result and result.validation:
             validation = "passed" if result.validation.is_success else "failed"
+        generated_test = "not attempted"
+        if result and result.generated_test:
+            if result.generated_test.is_stable and result.generated_test.committed:
+                generated_test = f"committed {result.generated_test.test_path}"
+            elif result.generated_test.fallback_reason:
+                generated_test = f"fallback: {result.generated_test.fallback_reason}"
+            else:
+                generated_test = "attempted but not accepted"
         tool_lines = "\n".join(
             f"- `{tool.name}`: {tool.status} - {tool.summary}"
             for tool in record.tool_calls
@@ -51,6 +59,7 @@ class RepairRecordWriter:
             f"- PR URL: {record.pr_url or 'not created'}\n"
             f"- Changed files: {changed_files}\n"
             f"- Validation: {validation}\n\n"
+            f"- Generated test: {generated_test}\n\n"
             "## Tool Calls\n"
             f"{tool_lines}\n"
         )

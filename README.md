@@ -98,6 +98,8 @@ targets:
 - [项目概览](docs/01-project-overview.md)
 - [环境与配置](docs/02-environment-setup.md)
 - [命令与 Webhook](docs/03-command-reference.md)
+- [V3 自动生成回归测试](docs/04-generated-regression-tests.md)
+- [V3 测试指南](docs/05-v3-testing-guide.md)
 
 ## 输出产物
 

@@ -3,6 +3,7 @@ __pycache__/
 .pytest-tmp/
 .agentfix-pytest-tmp/
 tmp-pytest/
+tmp-pytest*/
 .venv/
 venv/
 build/

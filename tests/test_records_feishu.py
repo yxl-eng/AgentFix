@@ -47,4 +47,6 @@ def test_feishu_card_contains_review_message() -> None:
 
     assert payload["msg_type"] == "interactive"
     assert FeishuNotifier.REVIEW_MESSAGE in payload["card"]["header"]["title"]["content"]
-    assert "https://github.com/org/repo/pull/1" in payload["card"]["elements"][5]["content"]
+    element_text = "\n".join(element["content"] for element in payload["card"]["elements"])
+    assert "https://github.com/org/repo/pull/1" in element_text
+    assert "Generated test" in element_text

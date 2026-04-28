@@ -109,6 +109,15 @@ class GitHubPublisher:
             f"- `{result.command}` -> {result.returncode}"
             for result in validation.commands
         ) or "- no validation commands executed"
+        generated_test = validation.generated_test
+        if generated_test is None:
+            generated_test_block = "- not attempted"
+        elif generated_test.is_stable and generated_test.committed:
+            generated_test_block = f"- committed `{generated_test.test_path}` ({generated_test.framework})"
+        elif generated_test.fallback_reason:
+            generated_test_block = f"- fallback to existing validation: {generated_test.fallback_reason}"
+        else:
+            generated_test_block = "- attempted but not accepted"
         risks = "\n".join(f"- {note}" for note in analysis.additional_notes) or "- Human review recommended before merge."
         return (
             "## Error Summary\n"
@@ -121,6 +130,8 @@ class GitHubPublisher:
             f"{changed}\n\n"
             "## Validation\n"
             f"{validation_lines}\n\n"
+            "## Generated Regression Test\n"
+            f"{generated_test_block}\n\n"
             "## Risk / Human Review\n"
             f"{risks}\n"
         )

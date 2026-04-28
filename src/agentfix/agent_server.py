@@ -54,6 +54,8 @@ class AgentProcessor:
             incident_id=payload.get("incident_id"),
             base_branch=payload.get("base_branch"),
             delivery_id=(headers or {}).get("X-AgentFix-Delivery"),
+            request_context=payload.get("request_context"),
+            expected_outcome=payload.get("expected_outcome"),
             raw_payload=payload,
         )
         return self.process_event(event, target_config)
@@ -109,6 +111,8 @@ class AgentProcessor:
                 )
             )
             incident = self.ingestor.parse_log(log_text, incident_id=incident_id)
+            incident.request_context = event.request_context
+            incident.expected_outcome = event.expected_outcome
             result = self.orchestrator.run_incident(
                 target_config.repo_path,
                 incident,
@@ -204,12 +208,43 @@ class AgentProcessor:
         validation_commands = []
         if result.validation is not None:
             validation_commands = [command.model_dump(mode="json") for command in result.validation.commands]
+        generated_test_outputs = {}
+        if result.generated_test is not None:
+            generated_test_outputs = result.generated_test.model_dump(mode="json")
         return [
             ToolCallRecord(
                 name="Read Code",
                 status="success" if candidate_targets else "warning",
                 summary="Collected candidate source files for model analysis.",
                 outputs={"candidate_targets": candidate_targets, "changed_files": result.changed_files},
+            ),
+            ToolCallRecord(
+                name="Detect Test Framework",
+                status="success" if generated_test_outputs.get("framework") else "skipped",
+                summary="Detected the target repository test framework for generated regression tests.",
+                outputs=generated_test_outputs,
+            ),
+            ToolCallRecord(
+                name="Generate Regression Test",
+                status=(
+                    "success"
+                    if generated_test_outputs.get("test_path") and not generated_test_outputs.get("fallback_reason")
+                    else "skipped"
+                ),
+                summary=generated_test_outputs.get("fallback_reason") or "Generated an incident-specific regression test.",
+                outputs=generated_test_outputs,
+            ),
+            ToolCallRecord(
+                name="Run Generated Test Before Fix",
+                status="success" if generated_test_outputs.get("prefix_failed") else "skipped",
+                summary="Ran generated test before applying the repair patch.",
+                outputs=generated_test_outputs,
+            ),
+            ToolCallRecord(
+                name="Run Generated Test After Fix",
+                status="success" if generated_test_outputs.get("postfix_passed") else "skipped",
+                summary="Ran generated test after applying the repair patch.",
+                outputs=generated_test_outputs,
             ),
             ToolCallRecord(
                 name="Run Verification",
