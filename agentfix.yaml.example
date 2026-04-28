@@ -24,7 +24,39 @@ guardrails:
 validation:
   python_executable: python
   test_commands: []
+  service_start_timeout_seconds: 20
+  healthcheck_timeout_seconds: 20
+  healthcheck_interval_seconds: 1
 
 runtime:
   artifact_root: .agentfix-artifacts
   max_repair_attempts: 2
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  poll_interval_seconds: 10
+  state_path: .agentfix-state/events.sqlite3
+
+targets:
+  # my-service:
+  #   repo_full_name: owner/my-service
+  #   repo_path: C:/path/to/my-service
+  #   base_branch: main
+  #   service_log_file: logs/app.log
+  #   start_command: npm run dev
+  #   healthcheck_url: http://localhost:3000/health
+  #   test_commands:
+  #     - npm test
+  #   verification_requests:
+  #     - method: GET
+  #       url: http://localhost:3000/api/users/1
+  #       expected_status: 200
+
+feishu:
+  webhook_url_env_var: FEISHU_WEBHOOK_URL
+  webhook_secret_env_var: FEISHU_WEBHOOK_SECRET
+
+records:
+  root: records
+  auto_commit: true
