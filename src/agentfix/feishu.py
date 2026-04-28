@@ -47,6 +47,14 @@ class FeishuNotifier:
         validation_status = "not available"
         if result and result.validation:
             validation_status = "passed" if result.validation.is_success else "failed"
+        generated_test_status = "not attempted"
+        if result and result.generated_test:
+            if result.generated_test.is_stable and result.generated_test.committed:
+                generated_test_status = f"committed {result.generated_test.test_path}"
+            elif result.generated_test.fallback_reason:
+                generated_test_status = f"fallback: {result.generated_test.fallback_reason}"
+            else:
+                generated_test_status = "attempted but not accepted"
         return {
             "msg_type": "interactive",
             "card": {
@@ -56,6 +64,7 @@ class FeishuNotifier:
                     "template": "green" if record.status in {"pr_created", "validated"} else "orange",
                 },
                 "elements": [
+                    {"tag": "markdown", "content": f"**Generated test**: {generated_test_status}"},
                     {"tag": "markdown", "content": f"**目标服务**：{record.target}"},
                     {"tag": "markdown", "content": f"**状态**：{record.status}"},
                     {"tag": "markdown", "content": f"**摘要**：{record.message}"},

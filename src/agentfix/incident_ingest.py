@@ -3,13 +3,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from agentfix.models import Incident, StackFrame
+from agentfix.models import ExpectedOutcome, Incident, RequestContext, StackFrame
 
 
 FRAME_RE = re.compile(r'^\s*File "(?P<path>.+?)", line (?P<line>\d+), in (?P<func>.+?)\s*$')
 EXCEPTION_RE = re.compile(
     r"^(?P<type>[A-Za-z_][\w.]*(?:Error|Exception)|AssertionError|RuntimeError|ValueError):\s*(?P<message>.*)$"
 )
+REQUEST_RE = re.compile(r"\b(?P<method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(?P<path>/[^\s]+)")
 
 
 class IncidentIngestor:
@@ -29,6 +30,8 @@ class IncidentIngestor:
         suspected_module = self._extract_suspected_module(frames)
         trigger_hint = self._extract_trigger_hint(lines)
         occurred_at = self._extract_occurred_at(log_text)
+        request_context = self._extract_request_context(log_text)
+        expected_outcome = self._extract_expected_outcome(log_text)
 
         return Incident(
             service_name=service_name,
@@ -41,6 +44,8 @@ class IncidentIngestor:
             trigger_hint=trigger_hint,
             incident_id=incident_id,
             occurred_at=occurred_at,
+            request_context=request_context,
+            expected_outcome=expected_outcome,
         )
 
     def placeholder(self, reason: str = "manual-validation") -> Incident:
@@ -106,6 +111,30 @@ class IncidentIngestor:
         if not lead_in:
             return None
         return " | ".join(lead_in[-3:])
+
+    def _extract_request_context(self, text: str) -> RequestContext | None:
+        match = REQUEST_RE.search(text)
+        if not match:
+            return None
+        headers: dict[str, str] = {}
+        user_id = self._extract_tag(text, ["user_id", "user"])
+        if user_id:
+            headers["X-User-Id"] = user_id
+        return RequestContext(
+            method=match.group("method"),
+            path=match.group("path"),
+            headers=headers,
+        )
+
+    def _extract_expected_outcome(self, text: str) -> ExpectedOutcome | None:
+        status_text = self._extract_tag(text, ["expected_status", "expectedStatus"])
+        if not status_text:
+            return None
+        try:
+            status = int(status_text)
+        except ValueError:
+            return None
+        return ExpectedOutcome(expected_status=status)
 
     def _extract_occurred_at(self, text: str) -> str | None:
         match = re.search(

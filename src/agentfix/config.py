@@ -83,6 +83,15 @@ class VerificationRequestSettings(BaseModel):
     timeout_seconds: float = 10.0
 
 
+class GeneratedTestSettings(BaseModel):
+    enabled: bool = True
+    framework: str = "auto"
+    commit_when_stable: bool = True
+    fallback_to_v2_on_failure: bool = True
+    require_prefix_failure: bool = True
+    max_files: int = 1
+
+
 class TargetSettings(BaseModel):
     repo_full_name: str | None = None
     repo_path: str
@@ -93,6 +102,7 @@ class TargetSettings(BaseModel):
     healthcheck_url: str | None = None
     test_commands: list[str] | None = None
     verification_requests: list[VerificationRequestSettings] = Field(default_factory=list)
+    generated_tests: GeneratedTestSettings = Field(default_factory=GeneratedTestSettings)
 
 
 class FeishuSettings(BaseModel):
