@@ -9,14 +9,14 @@ from agentfix.providers.base import StructuredModelProvider
 
 ANALYSIS_INSTRUCTIONS = dedent(
     """
-    You analyze Python production incidents for an automated repair pipeline.
+    You analyze production incidents for an automated repair pipeline across common web service stacks.
     Return only structured output that:
-    - identifies the most likely root cause using the supplied traceback and code context
+    - identifies the most likely root cause using the supplied log, traceback, and code context
     - ranks only files that are present in the repository context
     - prefers the smallest safe code change
     - avoids dependency changes, rewrites, and speculative architecture edits
     - expresses every confidence value as a float between 0 and 1
-    - lowers confidence if the context is weak or multiple root causes are equally plausible
+    - lowers confidence if the context is weak, the language/runtime is unclear, or multiple root causes are equally plausible
     """
 ).strip()
 
@@ -45,7 +45,7 @@ class AnalysisAgent:
                         f"SCORE: {candidate.score}",
                         f"REASONS: {', '.join(candidate.reasons)}",
                         "EXCERPT:",
-                        "```python",
+                        "```text",
                         candidate.excerpt or candidate.full_content[:4000],
                         "```",
                     ]
@@ -73,6 +73,11 @@ class AnalysisAgent:
 
             TRACEBACK
             {traceback_block}
+
+            RAW LOG
+            ```text
+            {incident.log_text[:6000]}
+            ```
 
             CANDIDATE FILES
             {chr(10).join(candidate_blocks) if candidate_blocks else "(no candidate files found)"}

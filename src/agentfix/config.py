@@ -49,6 +49,9 @@ class GuardrailSettings(BaseModel):
 class ValidationSettings(BaseModel):
     python_executable: str = "python"
     test_commands: list[str] | None = None
+    service_start_timeout_seconds: float = 20.0
+    healthcheck_timeout_seconds: float = 20.0
+    healthcheck_interval_seconds: float = 1.0
 
     def resolved_python_executable(self) -> str:
         if self.python_executable != "python":
@@ -64,12 +67,72 @@ class RuntimeSettings(BaseModel):
     max_repair_attempts: int = 2
 
 
+class ServerSettings(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = 8080
+    poll_interval_seconds: float = 10.0
+    state_path: str = ".agentfix-state/events.sqlite3"
+
+
+class VerificationRequestSettings(BaseModel):
+    method: str = "GET"
+    url: str
+    expected_status: int = 200
+    body: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: float = 10.0
+
+
+class GeneratedTestSettings(BaseModel):
+    enabled: bool = True
+    framework: str = "auto"
+    commit_when_stable: bool = True
+    fallback_to_v2_on_failure: bool = True
+    require_prefix_failure: bool = True
+    max_files: int = 1
+
+
+class TargetSettings(BaseModel):
+    repo_full_name: str | None = None
+    repo_path: str
+    base_branch: str = "main"
+    service_log_file: str | None = None
+    start_command: str | None = None
+    working_dir: str = "."
+    healthcheck_url: str | None = None
+    test_commands: list[str] | None = None
+    verification_requests: list[VerificationRequestSettings] = Field(default_factory=list)
+    generated_tests: GeneratedTestSettings = Field(default_factory=GeneratedTestSettings)
+
+
+class FeishuSettings(BaseModel):
+    webhook_url_env_var: str = "FEISHU_WEBHOOK_URL"
+    webhook_secret_env_var: str = "FEISHU_WEBHOOK_SECRET"
+    webhook_url: str | None = None
+    webhook_secret: str | None = None
+
+    def resolved_webhook_url(self) -> str | None:
+        return self.webhook_url or os.getenv(self.webhook_url_env_var)
+
+    def resolved_webhook_secret(self) -> str | None:
+        return self.webhook_secret or os.getenv(self.webhook_secret_env_var)
+
+
+class RecordsSettings(BaseModel):
+    root: str = "records"
+    auto_commit: bool = True
+
+
 class AppConfig(BaseModel):
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
     github: GitHubSettings = Field(default_factory=GitHubSettings)
     guardrails: GuardrailSettings = Field(default_factory=GuardrailSettings)
     validation: ValidationSettings = Field(default_factory=ValidationSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    server: ServerSettings = Field(default_factory=ServerSettings)
+    targets: dict[str, TargetSettings] = Field(default_factory=dict)
+    feishu: FeishuSettings = Field(default_factory=FeishuSettings)
+    records: RecordsSettings = Field(default_factory=RecordsSettings)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

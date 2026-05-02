@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +12,21 @@ class StackFrame(BaseModel):
     function_name: str
     code_line: str | None = None
     raw_frame: str | None = None
+
+
+class RequestContext(BaseModel):
+    method: str | None = None
+    url: str | None = None
+    path: str | None = None
+    query: dict[str, Any] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: Any | None = None
+
+
+class ExpectedOutcome(BaseModel):
+    expected_status: int | None = None
+    body_contains: str | None = None
+    body_not_contains: str | None = None
 
 
 class Incident(BaseModel):
@@ -24,6 +40,8 @@ class Incident(BaseModel):
     trigger_hint: str | None = None
     incident_id: str | None = None
     occurred_at: str | None = None
+    request_context: RequestContext | None = None
+    expected_outcome: ExpectedOutcome | None = None
 
 
 class CandidateFile(BaseModel):
@@ -99,6 +117,45 @@ class ValidationCommandResult(BaseModel):
     stderr: str = ""
 
 
+class TestFrameworkInfo(BaseModel):
+    language: str = "unknown"
+    framework: str = "unknown"
+    reason: str = ""
+
+    @property
+    def is_supported(self) -> bool:
+        return self.framework != "unknown"
+
+
+class GeneratedTestProposal(BaseModel):
+    summary: str = ""
+    framework: str | None = None
+    test_path: str | None = None
+    test_name: str | None = None
+    updated_content: str | None = None
+    run_command: str | list[str] | None = None
+    expected_behavior: str = ""
+    confidence: float = Field(default=0.0, ge=0, le=1)
+
+
+class GeneratedTestResult(BaseModel):
+    attempted: bool = False
+    framework: str | None = None
+    test_path: str | None = None
+    test_name: str | None = None
+    run_command: str | list[str] | None = None
+    prefix_failed: bool | None = None
+    postfix_passed: bool | None = None
+    committed: bool = False
+    fallback_reason: str | None = None
+    summary: str = ""
+    commands: list[ValidationCommandResult] = Field(default_factory=list)
+
+    @property
+    def is_stable(self) -> bool:
+        return self.prefix_failed is True and self.postfix_passed is True
+
+
 class ValidationResult(BaseModel):
     syntax_check: bool
     tests_passed: bool | None = None
@@ -107,10 +164,17 @@ class ValidationResult(BaseModel):
     commands: list[ValidationCommandResult] = Field(default_factory=list)
     failure_summary: list[str] = Field(default_factory=list)
     suggested_follow_up: list[str] = Field(default_factory=list)
+    generated_test: GeneratedTestResult | None = None
 
     @property
     def is_success(self) -> bool:
-        return self.syntax_check and self.tests_passed is not False
+        generated_ok = (
+            self.generated_test is None
+            or not self.generated_test.attempted
+            or self.generated_test.is_stable
+            or self.generated_test.fallback_reason is not None
+        )
+        return self.syntax_check and self.tests_passed is not False and generated_ok
 
 
 class PullRequestResult(BaseModel):
@@ -134,3 +198,43 @@ class RepairResult(BaseModel):
     artifact_dir: str | None = None
     branch: str | None = None
     failure_reason: str | None = None
+    record_json_path: str | None = None
+    record_markdown_path: str | None = None
+    feishu_notified: bool | None = None
+    generated_test: GeneratedTestResult | None = None
+
+
+class RepairEvent(BaseModel):
+    source: str
+    target: str
+    log_text: str = ""
+    log_file: str | None = None
+    incident_id: str | None = None
+    base_branch: str | None = None
+    delivery_id: str | None = None
+    issue_url: str | None = None
+    issue_title: str | None = None
+    request_context: RequestContext | None = None
+    expected_outcome: ExpectedOutcome | None = None
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolCallRecord(BaseModel):
+    name: str
+    status: str
+    summary: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    outputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class RepairRecord(BaseModel):
+    incident_id: str
+    target: str
+    source: str
+    status: str
+    message: str
+    pr_url: str | None = None
+    record_json_path: str | None = None
+    record_markdown_path: str | None = None
+    repair_result: RepairResult | None = None
+    tool_calls: list[ToolCallRecord] = Field(default_factory=list)
