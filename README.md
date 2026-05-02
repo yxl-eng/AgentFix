@@ -1,101 +1,115 @@
 # AgentFix
 
-`agentfix` 是一个面向 Python 服务仓库的 Agent 化自动修复 CLI。它读取线上 Traceback 日志，结合本地 Git 仓库上下文定位代码，调用 OpenAI `Responses API` 做两阶段修复分析，生成最小补丁，执行语法检查与可用测试，并在成功后创建 GitHub Draft PR。
+AgentFix 是一个面向 Web 服务仓库的自动修复 Agent。它可以接收服务报错日志或 GitHub `bug` issue，读取目标仓库代码，调用大模型分析根因，生成最小补丁，运行测试和服务验证，创建 GitHub Draft PR，并通过飞书卡片通知开发者：
 
-## 当前能力
+> 我发现了一个 Bug 并已为您修复，请 Review
 
-- 输入来源：CLI 传入的日志文件
-- 目标仓库：本地 Python 服务仓库
-- 问题范围：`AttributeError`、`KeyError`、`TypeError`、`ImportError`、`ModuleNotFoundError`、`NoneType` 相关异常
-- 修复流程：日志解析 -> 仓库上下文收集 -> Analysis Agent -> Patch Agent -> `py_compile`/`pytest` -> Draft PR
-- 守护规则：最多改 3 个文件，禁止依赖文件改动，限制补丁行数
+当前版本保留原有 CLI 能力，同时新增常驻 Agent 服务。
+
+## 核心能力
+
+- **Read Log**：读取 webhook 上报日志、日志文件、GitHub issue body、watch 到的新日志。
+- **Read Code**：根据 traceback、`path:line`、错误 token、最近变更定位候选源码文件。
+- **Analyze + Patch**：通过 LLM 输出根因分析和完整文件补丁。
+- **Run Test / Verification**：运行测试命令，启动服务，健康检查，执行验证请求，扫描新增日志。
+- **Git Commit / PR**：创建修复分支、提交代码、推送并创建 GitHub Draft PR。
+- **Record Repair**：在 AgentFix 仓库写入 `records/<incident_id>.json` 和 `.md` 修复记录。
+- **Notify Feishu**：发送飞书群机器人交互卡片。
 
 ## 安装
 
 需要 Python 3.11+。
 
-```bash
+```powershell
 python -m venv .venv
-.venv\Scripts\activate
-pip install -e .[dev]
+.\.venv\Scripts\activate
+python -m pip install -e ".[dev]"
 ```
 
-复制示例配置：
+复制配置：
 
-```bash
+```powershell
 copy agentfix.yaml.example agentfix.yaml
 ```
 
-可选地用 `agentfix.local.yaml` 覆盖本地敏感配置，这个文件已被 `.gitignore` 忽略。
-
-设置环境变量：
+设置凭据：
 
 ```powershell
-$env:OPENAI_API_KEY="..."
-$env:GITHUB_TOKEN="..."
+$env:ARK_API_KEY="your-model-key"
+$env:GITHUB_TOKEN="your-github-token"
+$env:FEISHU_WEBHOOK_URL="your-feishu-bot-webhook"
 ```
 
-## 使用
+也可以把敏感配置写入 `agentfix.local.yaml`，该文件已被 `.gitignore` 忽略。
 
-分析一次事故：
+## 快速运行
 
-```bash
-agentfix analyze --repo C:\path\to\repo --log-file .\incident.log
+环境自检：
+
+```powershell
+agentfix doctor
 ```
 
-执行完整修复流程：
+原有单次修复：
 
-```bash
-agentfix run --repo C:\path\to\repo --log-file .\incident.log --base-branch main
+```powershell
+agentfix run --repo C:\path\to\target-repo --log-file .\incident.log --base-branch main
 ```
 
-只做验证：
+启动常驻 Agent：
 
-```bash
-agentfix validate --repo C:\path\to\repo --files app\service.py
+```powershell
+agentfix serve --host 0.0.0.0 --port 8080 --watch
 ```
 
-基于已有结果创建 Draft PR：
+上报事故：
 
-```bash
-agentfix pr --repo C:\path\to\repo --report-file .agentfix-artifacts\...\repair-result.json
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8080/webhooks/incidents `
+  -ContentType application/json `
+  -Body '{"target":"my-service","incident_id":"demo-001","log_text":"TypeError: boom at src/app.ts:10"}'
 ```
 
-## 配置
+## 配置示例
 
-`agentfix.yaml` 里主要包含：
-
-- `openai.model`：默认模型
-- `openai.base_url`：OpenAI 兼容接口地址
-- `openai.transport`：`auto` / `responses` / `chat_completions` / `rest_chat_completions`
-- `openai.analysis_reasoning_effort`：根因分析推理强度
-- `openai.patch_reasoning_effort`：补丁生成推理强度
-- `github.token_env_var`：GitHub Token 环境变量名
-- `guardrails.max_changed_files`：最大改动文件数
-- `guardrails.max_patch_lines`：最大补丁行数
-- `validation.python_executable`：Python 可执行文件
-- `validation.test_commands`：显式测试命令
-
-## 目录结构
-
-```text
-src/agentfix/
-  cli.py
-  incident_ingest.py
-  repo_context.py
-  patch_engine.py
-  validator.py
-  publisher.py
-  repair_orchestrator.py
-  providers/
-  services/
-tests/
-  fixtures/
+```yaml
+targets:
+  my-service:
+    repo_full_name: owner/my-service
+    repo_path: C:/path/to/my-service
+    base_branch: main
+    service_log_file: logs/app.log
+    start_command: npm run dev
+    healthcheck_url: http://localhost:3000/health
+    test_commands:
+      - npm test
+    verification_requests:
+      - method: GET
+        url: http://localhost:3000/api/users/1
+        expected_status: 200
 ```
 
-## 注意事项
+第一版只处理已配置的 `targets`，不接受 webhook 传入任意 `repo_path` 或 `repo_url`。目标仓库需要提前 clone 到本地。
 
-- 当前仓库里只实现了 CLI 和核心模块，没有内置 HTTP 服务。
-- Publisher 默认直接用 GitHub REST API 创建 Draft PR，要求本地仓库已有 `origin` 远端且可推送。
-- 本机当前若没有 Python 运行时，将无法直接执行本工具；装好 Python 后即可按上面的步骤运行。
-- 对接火山方舟标准接口时，`base_url` 通常应为 `https://ark.cn-beijing.volces.com/api/v3`。若使用 Coding Plan，需要单独订阅对应套餐。
+## 文档
+
+- [项目概览](docs/01-project-overview.md)
+- [环境与配置](docs/02-environment-setup.md)
+- [命令与 Webhook](docs/03-command-reference.md)
+- [V3 自动生成回归测试](docs/04-generated-regression-tests.md)
+- [V3 测试指南](docs/05-v3-testing-guide.md)
+
+## 输出产物
+
+- `.agentfix-artifacts/`：每次修复的中间产物、补丁、验证结果、最终报告。
+- `.agentfix-state/events.sqlite3`：事件去重状态库。
+- `records/`：Agent 自动生成的修复记录，适合作为交付物和演示材料。
+
+## 安全边界
+
+- webhook 不允许传任意仓库路径或 GitHub 链接。
+- 只有 `agentfix.yaml` 中配置过的 target 会被处理。
+- 依赖文件默认禁止被自动补丁修改。
+- 自动补丁受最大文件数和最大补丁行数限制。

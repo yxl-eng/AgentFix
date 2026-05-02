@@ -9,7 +9,7 @@ from agentfix.providers.base import StructuredModelProvider
 
 PATCH_INSTRUCTIONS = dedent(
     """
-    You generate minimal safe Python repair patches.
+    You generate minimal safe repair patches for web service code across common languages.
     Return only structured output that:
     - edits at most the explicitly permitted files
     - preserves unrelated code and formatting as much as possible
@@ -56,7 +56,7 @@ class PatchAgent:
                 "\n".join(
                     [
                         f"FILE: {candidate.relative_path}",
-                        "```python",
+                        "```text",
                         candidate.full_content,
                         "```",
                     ]
@@ -76,6 +76,10 @@ class PatchAgent:
             exception_type: {incident.exception_type}
             exception_message: {incident.exception_message}
             trigger_hint: {incident.trigger_hint or "unknown"}
+            raw_log:
+            ```text
+            {incident.log_text[:6000]}
+            ```
 
             ANALYSIS
             root_cause_summary: {analysis.root_cause_summary}

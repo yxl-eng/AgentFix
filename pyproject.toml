@@ -7,7 +7,7 @@ name = "agentfix"
 version = "0.1.0"
 description = "Agent-based service auto-repair CLI for Python repositories"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "OpenAI Codex" }]
 dependencies = [
@@ -32,4 +32,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --basetemp=tmp-pytest"
+norecursedirs = ["tests/fixtures"]

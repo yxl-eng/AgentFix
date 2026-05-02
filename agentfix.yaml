@@ -22,9 +22,70 @@ guardrails:
     - node_modules
 
 validation:
-  python_executable: python3
+  python_executable: python
   test_commands: []
+  service_start_timeout_seconds: 20
+  healthcheck_timeout_seconds: 20
+  healthcheck_interval_seconds: 1
 
 runtime:
   artifact_root: .agentfix-artifacts
   max_repair_attempts: 2
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  poll_interval_seconds: 10
+  state_path: .agentfix-state/events.sqlite3
+
+targets:
+  demo-python-service:
+    repo_full_name: demo/demo-python-service
+    repo_path: demo_services/python-user-service
+    base_branch: main
+    service_log_file: logs/app.log
+    start_command: python -m app.server --port 8765
+    working_dir: .
+    healthcheck_url: http://127.0.0.1:8765/health
+    test_commands:
+      - python -m unittest discover -s tests
+    verification_requests:
+      - method: GET
+        url: http://127.0.0.1:8765/api/users/1/email
+        expected_status: 200
+      - method: GET
+        url: http://127.0.0.1:8765/api/users/missing/email
+        expected_status: 404
+    generated_tests:
+      enabled: true
+      framework: auto
+      commit_when_stable: true
+      fallback_to_v2_on_failure: true
+
+  fastapi-order-service:
+    repo_full_name: demo/fastapi-order-service
+    repo_path: demo_services/fastapi-order-service
+    base_branch: main
+    service_log_file: logs/app.log
+    start_command: uvicorn app.main:app --host 127.0.0.1 --port 8770
+    working_dir: .
+    healthcheck_url: http://127.0.0.1:8770/health
+    test_commands:
+      - python -m pytest tests
+    verification_requests:
+      - method: GET
+        url: http://127.0.0.1:8770/health
+        expected_status: 200
+    generated_tests:
+      enabled: true
+      framework: auto
+      commit_when_stable: true
+      fallback_to_v2_on_failure: true
+
+feishu:
+  webhook_url_env_var: FEISHU_WEBHOOK_URL
+  webhook_secret_env_var: FEISHU_WEBHOOK_SECRET
+
+records:
+  root: records
+  auto_commit: true
