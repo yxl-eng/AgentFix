@@ -22,15 +22,22 @@ from agentfix.providers.base import StructuredModelProvider
 
 GENERATED_TEST_INSTRUCTIONS = dedent(
     """
-    You write focused regression tests for automated repair.
-    Return only structured output that:
-    - creates at most one test file
-    - follows the repository's existing test style and framework
-    - encodes the correct behavior after the incident is fixed
-    - does not assert that the current exception should be raised
-    - avoids network calls unless the existing tests already do them
-    - keeps the test deterministic and local to the repository
-    - returns an empty test_path if a reliable test cannot be generated
+    你是 AgentFix 的回归测试生成专家，负责为自动修复生成聚焦、可靠的测试。
+    只返回结构化结果，并遵守这些规则：
+    - 最多创建一个测试文件。
+    - 优先只创建一个聚焦本次 incident 的测试函数，不要顺手添加无关边界测试。
+    - 遵循仓库现有测试风格和测试框架。
+    - 测试应该表达 incident 修复后的正确行为。
+    - 不要断言“当前异常应该被抛出”。
+    - 如果测试 HTTP/API 行为，只断言公开 API 契约：状态码、错误信息、响应模型中会返回的字段。
+    - 不要断言 repository、ORM、缓存、库存锁等内部字段会出现在 HTTP 响应里，除非现有公开接口已经返回它们。
+    - 对 FastAPI/Pydantic 项目，看到 response_model 或响应模型时，必须遵守该模型；如果上下文不足，不要猜测内部字段会返回。
+    - 除非现有测试已经这样做，否则不要访问真实网络。
+    - 测试必须可重复、局部、稳定。
+    - 如果无法生成可靠测试，把 test_path 设为空。
+    - 所有面向人类阅读的文本字段必须使用简体中文，包括：
+      summary、expected_behavior。
+    - 测试代码、测试函数名、路径、命令、API 字段和业务标识保持原文。
     """
 ).strip()
 
@@ -51,18 +58,18 @@ class FrameworkDetector:
                 return detected
 
         if (root / "go.mod").exists():
-            return TestFrameworkInfo(language="go", framework="go-test", reason="Found go.mod.")
+            return TestFrameworkInfo(language="go", framework="go-test", reason="检测到 go.mod。")
 
         if (root / "pom.xml").exists():
-            return TestFrameworkInfo(language="java", framework="java-maven-junit", reason="Found pom.xml.")
+            return TestFrameworkInfo(language="java", framework="java-maven-junit", reason="检测到 pom.xml。")
         if (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
-            return TestFrameworkInfo(language="java", framework="java-gradle-junit", reason="Found Gradle build file.")
+            return TestFrameworkInfo(language="java", framework="java-gradle-junit", reason="检测到 Gradle 构建文件。")
 
         detected_python = self._detect_python(root)
         if detected_python.is_supported:
             return detected_python
 
-        return TestFrameworkInfo(reason="No supported test framework was detected.")
+        return TestFrameworkInfo(reason="未检测到支持的测试框架。")
 
     def _explicit(self, requested: str) -> TestFrameworkInfo:
         aliases = {
@@ -84,9 +91,9 @@ class FrameworkDetector:
             "java-gradle-junit": ("java", "java-gradle-junit"),
         }
         if requested not in aliases:
-            return TestFrameworkInfo(reason=f"Unsupported explicit framework: {requested}.")
+            return TestFrameworkInfo(reason=f"配置的测试框架不受支持：{requested}。")
         language, framework = aliases[requested]
-        return TestFrameworkInfo(language=language, framework=framework, reason=f"Configured framework: {requested}.")
+        return TestFrameworkInfo(language=language, framework=framework, reason=f"使用配置指定的测试框架：{requested}。")
 
     def _detect_node(self, package_json: Path) -> TestFrameworkInfo:
         try:
@@ -95,21 +102,21 @@ class FrameworkDetector:
             data = {}
         text = json.dumps(data)
         if "vitest" in text:
-            return TestFrameworkInfo(language="node", framework="node-vitest", reason="package.json mentions vitest.")
+            return TestFrameworkInfo(language="node", framework="node-vitest", reason="package.json 中包含 vitest。")
         if "jest" in text:
-            return TestFrameworkInfo(language="node", framework="node-jest", reason="package.json mentions jest.")
+            return TestFrameworkInfo(language="node", framework="node-jest", reason="package.json 中包含 jest。")
         if "mocha" in text:
-            return TestFrameworkInfo(language="node", framework="node-mocha", reason="package.json mentions mocha.")
-        return TestFrameworkInfo(reason="package.json did not mention a supported test framework.")
+            return TestFrameworkInfo(language="node", framework="node-mocha", reason="package.json 中包含 mocha。")
+        return TestFrameworkInfo(reason="package.json 中没有发现支持的测试框架。")
 
     def _detect_python(self, root: Path) -> TestFrameworkInfo:
         pytest_markers = ["pytest.ini", "tox.ini", "setup.cfg"]
         if any((root / name).exists() and "pytest" in (root / name).read_text(encoding="utf-8", errors="ignore") for name in pytest_markers):
-            return TestFrameworkInfo(language="python", framework="python-pytest", reason="Found pytest configuration.")
+            return TestFrameworkInfo(language="python", framework="python-pytest", reason="检测到 pytest 配置。")
         for dependency_file in ["requirements.txt", "requirements-dev.txt", "pyproject.toml"]:
             path = root / dependency_file
             if path.exists() and "pytest" in path.read_text(encoding="utf-8", errors="ignore").lower():
-                return TestFrameworkInfo(language="python", framework="python-pytest", reason=f"{dependency_file} mentions pytest.")
+                return TestFrameworkInfo(language="python", framework="python-pytest", reason=f"{dependency_file} 中包含 pytest。")
 
         tests_root = root / "tests"
         if tests_root.exists():
@@ -120,12 +127,12 @@ class FrameworkDetector:
                     for path in test_files[:5]
                 )
                 if "unittest" in contents and "pytest" not in contents:
-                    return TestFrameworkInfo(language="python", framework="python-unittest", reason="Existing tests use unittest.")
-                return TestFrameworkInfo(language="python", framework="python-pytest", reason="Found Python test files.")
+                    return TestFrameworkInfo(language="python", framework="python-unittest", reason="现有测试使用 unittest。")
+                return TestFrameworkInfo(language="python", framework="python-pytest", reason="检测到 Python 测试文件。")
 
         if any(root.rglob("*.py")):
-            return TestFrameworkInfo(language="python", framework="python-pytest", reason="Found Python source files.")
-        return TestFrameworkInfo(reason="No Python source files were found.")
+            return TestFrameworkInfo(language="python", framework="python-pytest", reason="检测到 Python 源码文件。")
+        return TestFrameworkInfo(reason="未发现 Python 源码文件。")
 
 
 class GeneratedTestAgent:
@@ -209,10 +216,13 @@ class GeneratedTestAgent:
             {chr(10).join(candidate_blocks) if candidate_blocks else "(no source context)"}
 
             TASK
-            Generate one regression test file that fails before the fix and passes after the fix.
-            Prefer a path under an existing tests directory. For Python pytest, prefer tests/test_agentfix_<topic>.py.
-            For Python unittest, create a unittest.TestCase class in a test_*.py file.
-            Return the full test file content. If no reliable test is possible, set test_path to null.
+            生成一个回归测试文件：修复前应该失败，修复后应该通过。
+            优先放在现有 tests 目录下。Python pytest 优先使用 tests/test_agentfix_<topic>.py。
+            Python unittest 请在 test_*.py 文件中创建 unittest.TestCase 类。
+            测试只覆盖本次 incident 的核心行为，不要添加额外的泛化场景。
+            如果是 Web API 测试，请优先断言 expected_outcome、HTTP 状态码和公开错误文案；
+            不要断言响应里存在未在 handler/serializer/response_model 中公开的内部字段。
+            返回完整测试文件内容。如果无法生成可靠测试，把 test_path 设为 null，并用中文说明原因。
             """
         ).strip()
 

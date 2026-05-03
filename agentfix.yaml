@@ -11,8 +11,8 @@ github:
   api_base_url: https://api.github.com
 
 guardrails:
-  max_changed_files: 3
-  max_patch_lines: 250
+  max_changed_files: 6
+  max_patch_lines: 600
   min_confidence: 0.45
   ignored_paths:
     - .git
@@ -37,6 +37,29 @@ server:
   port: 8080
   poll_interval_seconds: 10
   state_path: .agentfix-state/events.sqlite3
+
+agent:
+  planner:
+    enabled: true
+    max_steps: 8
+    allowed_tools:
+      - Read Log
+      - Inspect Config
+      - Check Runtime
+      - Search Similar Fixes
+      - Read Code
+      - Generate Regression Test
+      - Run Test
+      - Git Commit
+      - Record Repair
+      - Notify Feishu
+  risk:
+    max_changed_files: 6
+    max_changed_lines: 600
+  report:
+    notify_on_ignored: false
+    notify_on_report_only: true
+    notify_on_needs_more_context: true
 
 targets:
   demo-python-service:
