@@ -35,7 +35,7 @@ class Validator:
             commands.append(compile_result)
             syntax_check = compile_result.returncode == 0
             if not syntax_check:
-                failures.append("Python syntax validation failed.")
+                failures.append("Python 语法检查失败。")
 
         test_commands, tests_skipped_reason = self._infer_test_commands(
             root,
@@ -61,7 +61,7 @@ class Validator:
             commands.append(result)
             if result.returncode != 0:
                 tests_passed = False
-                failures.append(f"Test command failed: {result.command}")
+                failures.append(f"测试命令失败：{result.command}")
 
         if service_checks_configured and target_config is not None:
             service_results = self._run_service_verification(root, target_config, settings, incident)
@@ -69,7 +69,7 @@ class Validator:
             failed_service_results = [item for item in service_results if item.returncode != 0]
             if failed_service_results:
                 tests_passed = False
-                failures.extend(f"Service verification failed: {item.command}" for item in failed_service_results)
+                failures.extend(f"服务验证失败：{item.command}" for item in failed_service_results)
 
         return ValidationResult(
             syntax_check=syntax_check,
@@ -79,7 +79,7 @@ class Validator:
             commands=commands,
             failure_summary=failures,
             suggested_follow_up=(
-                ["Review failing command output and retry with a narrower patch."]
+                ["请查看失败命令的 stdout/stderr，必要时缩小补丁范围后重试。"]
                 if failures
                 else []
             ),
@@ -96,16 +96,16 @@ class Validator:
         if target_config is not None and target_config.test_commands is not None:
             if target_config.test_commands:
                 return target_config.test_commands, None
-            return [], "Functional tests were skipped by target.test_commands configuration."
+            return [], "target.test_commands 配置为空，因此跳过功能测试。"
         if settings.test_commands is not None:
             if settings.test_commands:
                 return settings.test_commands, None
-            return [], "Functional tests were skipped by validation.test_commands configuration."
+            return [], "validation.test_commands 配置为空，因此跳过功能测试。"
         if repo_context.metadata.test_candidates:
             return [[python_executable, "-m", "pytest", *repo_context.metadata.test_candidates]], None
         if (root / "tests").exists():
             return [[python_executable, "-m", "pytest"]], None
-        return [], "No test targets were discovered; only syntax validation was run."
+        return [], "未发现可运行的测试目标，只执行了语法检查。"
 
     def _run_service_verification(
         self,
@@ -124,7 +124,7 @@ class Validator:
                 ValidationCommandResult(
                     command=f"service working directory {target_config.working_dir}",
                     returncode=1,
-                    stderr="Configured service working_dir escapes repository root.",
+                    stderr="配置的 service working_dir 越出了目标仓库目录。",
                 )
             ]
 
@@ -152,7 +152,7 @@ class Validator:
                             ValidationCommandResult(
                                 command=f"service process pid={service_process.pid}",
                                 returncode=1,
-                                stderr=f"Service exited early with {service_process.returncode}.",
+                                stderr=f"服务进程过早退出，退出码为 {service_process.returncode}。",
                             )
                         )
                 except OSError as exc:
@@ -210,7 +210,7 @@ class Validator:
         return ValidationCommandResult(
             command=f"healthcheck {url}",
             returncode=1,
-            stderr=last_error or "Healthcheck timed out.",
+            stderr=last_error or "健康检查超时。",
         )
 
     def _run_verification_request(self, request_config: VerificationRequestSettings) -> ValidationCommandResult:
@@ -255,7 +255,7 @@ class Validator:
             return ValidationCommandResult(
                 command=f"scan service log {service_log_path}",
                 returncode=0,
-                stdout="Service log file was not created.",
+                stdout="服务日志文件未创建。",
             )
         with service_log_path.open("r", encoding="utf-8", errors="ignore") as handle:
             handle.seek(service_log_position)
@@ -269,7 +269,7 @@ class Validator:
         return ValidationCommandResult(
             command=f"scan service log {service_log_path}",
             returncode=1 if repeated else 0,
-            stdout="No repeated incident markers found." if not repeated else "Incident marker repeated in service log.",
+            stdout="未发现同类 incident 标记再次出现。" if not repeated else "服务日志中再次出现同类 incident 标记。",
         )
 
     def _stop_service(self, process: subprocess.Popen[str]) -> ValidationCommandResult:
@@ -277,7 +277,7 @@ class Validator:
             return ValidationCommandResult(
                 command=f"stop service pid={process.pid}",
                 returncode=0,
-                stdout=f"Process already exited with {process.returncode}.",
+                stdout=f"服务进程已自行退出，退出码为 {process.returncode}。",
             )
         process.terminate()
         try:
@@ -288,12 +288,12 @@ class Validator:
             return ValidationCommandResult(
                 command=f"stop service pid={process.pid}",
                 returncode=0,
-                stdout="Process killed after terminate timeout.",
+                stdout="服务进程在 terminate 超时后已被 kill。",
             )
         return ValidationCommandResult(
             command=f"stop service pid={process.pid}",
             returncode=0,
-            stdout="Process terminated.",
+            stdout="服务进程已停止。",
         )
 
     def _service_log_path(self, root: Path, target_config: TargetSettings) -> Path | None:

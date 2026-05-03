@@ -149,11 +149,28 @@ class GeneratedTestResult(BaseModel):
     committed: bool = False
     fallback_reason: str | None = None
     summary: str = ""
+    expected_behavior: str = ""
+    test_cases: list[str] = Field(default_factory=list)
     commands: list[ValidationCommandResult] = Field(default_factory=list)
+    original_test_existed: bool | None = Field(default=None, exclude=True)
+    original_test_content: str | None = Field(default=None, exclude=True)
 
     @property
     def is_stable(self) -> bool:
         return self.prefix_failed is True and self.postfix_passed is True
+
+
+class PlannerDecision(BaseModel):
+    disposition: str = "repair_attempt"
+    root_cause_type: str = "code"
+    risk_level: str = "medium"
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    summary: str = ""
+    decision_reason: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    tool_plan: list[str] = Field(default_factory=list)
+    human_action_required: bool = False
+    human_resolution_steps: list[str] = Field(default_factory=list)
 
 
 class ValidationResult(BaseModel):
@@ -202,6 +219,15 @@ class RepairResult(BaseModel):
     record_markdown_path: str | None = None
     feishu_notified: bool | None = None
     generated_test: GeneratedTestResult | None = None
+    disposition: str | None = None
+    decision_reason: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    tool_plan: list[str] = Field(default_factory=list)
+    root_cause_type: str | None = None
+    risk_level: str | None = None
+    human_action_required: bool = False
+    human_resolution_steps: list[str] = Field(default_factory=list)
+    planner_decision: PlannerDecision | None = None
 
 
 class RepairEvent(BaseModel):
@@ -238,3 +264,11 @@ class RepairRecord(BaseModel):
     record_markdown_path: str | None = None
     repair_result: RepairResult | None = None
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
+    disposition: str | None = None
+    decision_reason: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    tool_plan: list[str] = Field(default_factory=list)
+    root_cause_type: str | None = None
+    risk_level: str | None = None
+    human_action_required: bool = False
+    human_resolution_steps: list[str] = Field(default_factory=list)

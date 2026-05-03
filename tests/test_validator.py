@@ -55,7 +55,7 @@ def test_validator_reports_explicit_test_skip(temp_repo, fixtures_root) -> None:
     assert result.syntax_check is True
     assert result.tests_passed is None
     assert result.tests_executed is False
-    assert result.tests_skipped_reason == "Functional tests were skipped by validation.test_commands configuration."
+    assert result.tests_skipped_reason == "validation.test_commands 配置为空，因此跳过功能测试。"
     assert len(result.commands) == 1
 
 
