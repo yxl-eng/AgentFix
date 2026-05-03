@@ -92,10 +92,10 @@ class GitHubPublisher:
 
     def build_commit_message(self, incident: Incident) -> str:
         incident_id = incident.incident_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        return f"fix: auto-repair {incident.exception_type} from incident {incident_id}"
+        return f"fix: 修复 incident {incident_id} 中的 {incident.exception_type}"
 
     def build_pr_title(self, incident: Incident, analysis: AnalysisResult) -> str:
-        return f"[agentfix] {incident.exception_type}: {analysis.root_cause_summary[:72]}"
+        return f"[AgentFix] 自动修复 {incident.exception_type}: {analysis.root_cause_summary[:72]}"
 
     def build_pr_body(
         self,
@@ -104,37 +104,57 @@ class GitHubPublisher:
         applied_patch: AppliedPatch,
         validation: ValidationResult,
     ) -> str:
-        changed = "\n".join(f"- `{path}`" for path in applied_patch.changed_files) or "- none"
+        changed = "\n".join(f"- `{path}`" for path in applied_patch.changed_files) or "- 无"
         validation_lines = "\n".join(
             f"- `{result.command}` -> {result.returncode}"
             for result in validation.commands
-        ) or "- no validation commands executed"
+        ) or "- 未执行验证命令"
         generated_test = validation.generated_test
         if generated_test is None:
-            generated_test_block = "- not attempted"
+            generated_test_block = "- 未尝试生成回归测试"
         elif generated_test.is_stable and generated_test.committed:
-            generated_test_block = f"- committed `{generated_test.test_path}` ({generated_test.framework})"
+            generated_test_block = f"- 已提交 `{generated_test.test_path}` ({generated_test.framework})"
         elif generated_test.fallback_reason:
-            generated_test_block = f"- fallback to existing validation: {generated_test.fallback_reason}"
+            generated_test_block = f"- 未采纳，继续既有验证：{generated_test.fallback_reason}"
         else:
-            generated_test_block = "- attempted but not accepted"
-        risks = "\n".join(f"- {note}" for note in analysis.additional_notes) or "- Human review recommended before merge."
+            generated_test_block = "- 已尝试生成，但未达到提交条件"
+        generated_test_details = self._generated_test_details(generated_test)
+        repair_plan = "\n".join(f"- {step}" for step in analysis.repair_plan) or "- 根据根因定位修改相关业务代码，并保持补丁范围尽量小。"
+        risks = "\n".join(f"- {note}" for note in analysis.additional_notes) or "- 合并前建议开发者 Review。"
         return (
-            "## Error Summary\n"
-            f"- Service: `{incident.service_name}`\n"
-            f"- Environment: `{incident.environment}`\n"
-            f"- Exception: `{incident.exception_type}: {incident.exception_message}`\n\n"
-            "## Root Cause\n"
+            "## 错误摘要\n"
+            f"- 服务：`{incident.service_name}`\n"
+            f"- 环境：`{incident.environment}`\n"
+            f"- 异常：`{incident.exception_type}: {incident.exception_message}`\n\n"
+            "## 根因分析\n"
             f"{analysis.root_cause_summary}\n\n"
-            "## Code Changes\n"
+            "## 修改内容\n"
             f"{changed}\n\n"
-            "## Validation\n"
+            "## 修复思路\n"
+            f"{repair_plan}\n\n"
+            "## 验证结果\n"
             f"{validation_lines}\n\n"
-            "## Generated Regression Test\n"
-            f"{generated_test_block}\n\n"
-            "## Risk / Human Review\n"
+            "## 自动生成回归测试\n"
+            f"{generated_test_block}\n"
+            f"{generated_test_details}\n\n"
+            "## 风险与人工 Review 建议\n"
             f"{risks}\n"
         )
+
+    def _generated_test_details(self, generated_test) -> str:
+        if generated_test is None:
+            return "- 说明：本次未生成新的回归测试。"
+        lines = []
+        if generated_test.summary:
+            lines.append(f"- 用例介绍：{generated_test.summary}")
+        if generated_test.expected_behavior:
+            lines.append(f"- 预期行为：{generated_test.expected_behavior}")
+        if generated_test.test_cases:
+            lines.append("- 覆盖用例：")
+            lines.extend(f"  - `{name}`" for name in generated_test.test_cases)
+        if not lines:
+            lines.append("- 说明：没有额外测试说明。")
+        return "\n".join(lines)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -155,7 +175,7 @@ class GitHubPublisher:
         token = self.settings.resolved_token()
         if not token:
             raise PublisherError(
-                f"GitHub token missing. Set {self.settings.token_env_var} before creating a PR."
+                f"缺少 GitHub Token。创建 PR 前请设置 {self.settings.token_env_var}。"
             )
 
         payload = json.dumps(
@@ -182,13 +202,13 @@ class GitHubPublisher:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:  # pragma: no cover
             details = exc.read().decode("utf-8", errors="ignore")
-            raise PublisherError(f"GitHub PR creation failed: {details}") from exc
+            raise PublisherError(f"GitHub PR 创建失败：{details}") from exc
         return data["html_url"]
 
     def _parse_github_remote(self, remote_url: str) -> tuple[str, str]:
         match = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?$", remote_url)
         if not match:
-            raise PublisherError(f"Unsupported GitHub remote URL: {remote_url}")
+            raise PublisherError(f"不支持的 GitHub remote URL：{remote_url}")
         return match.group("owner"), match.group("repo")
 
     def _git(self, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -201,7 +221,7 @@ class GitHubPublisher:
         )
         if completed.returncode != 0:
             raise PublisherError(
-                f"git {' '.join(args)} failed: {completed.stderr.strip() or completed.stdout.strip()}"
+                f"git {' '.join(args)} 执行失败：{completed.stderr.strip() or completed.stdout.strip()}"
             )
         return completed
 

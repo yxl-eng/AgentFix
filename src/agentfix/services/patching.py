@@ -9,13 +9,16 @@ from agentfix.providers.base import StructuredModelProvider
 
 PATCH_INSTRUCTIONS = dedent(
     """
-    You generate minimal safe repair patches for web service code across common languages.
-    Return only structured output that:
-    - edits at most the explicitly permitted files
-    - preserves unrelated code and formatting as much as possible
-    - does not delete tests, change dependencies, or introduce broad refactors
-    - produces complete updated file contents for each changed file
-    - keeps the patch focused on fixing the supplied incident
+    你是 AgentFix 的补丁生成专家，负责为多语言 Web 服务生成最小安全修复。
+    只返回结构化结果，并遵守这些规则：
+    - 最多只编辑明确允许的文件。
+    - 尽量保留无关代码和原有格式。
+    - 不删除测试、不修改依赖、不引入大范围重构。
+    - 对每个改动文件返回完整的更新后文件内容。
+    - 补丁必须聚焦于修复本次 incident。
+    - 所有面向人类阅读的文本字段必须使用简体中文，包括：
+      summary、patches[].reason、validation_notes、commit_message_title。
+    - 文件路径、函数名、异常类型、命令、代码标识符和代码内容保持原文，不要翻译。
     """
 ).strip()
 
@@ -99,7 +102,7 @@ class PatchAgent:
             {chr(10).join(file_context_blocks) if file_context_blocks else "(no file content available)"}
 
             TASK
-            Generate a minimal patch proposal that fixes the incident.
-            If confidence is too low, return an empty patch list and explain why in the summary.
+            生成一个能修复本次 incident 的最小补丁方案。
+            如果置信度太低，请返回空 patches，并在 summary 中用中文说明为什么不能自动修改。
             """
         ).strip()

@@ -34,7 +34,7 @@ class UnavailableProvider(StructuredModelProvider):
         output_model: type,
         reasoning_effort: str | None = None,
     ):
-        raise ModelProviderError("This command path does not have a model provider configured.")
+        raise ModelProviderError("当前命令路径没有配置模型 Provider。")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -124,16 +124,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "pr":
         report_payload = json.loads(Path(args.report_file).read_text(encoding="utf-8"))
         branch = report_payload.get("branch") or _current_branch(Path(args.repo))
-        title = f"[agentfix] {report_payload.get('root_cause_summary', 'Automated repair')}"
+        title = f"[AgentFix] 自动修复：{report_payload.get('root_cause_summary', '自动修复')}"
         validation_lines = "\n".join(
             f"- `{command}`" for command in report_payload.get("tests_run", [])
-        ) or "- none"
+        ) or "- 无"
         body = (
-            "## Error Summary\n"
-            f"- Status: `{report_payload.get('status', 'unknown')}`\n\n"
-            "## Root Cause\n"
-            f"{report_payload.get('root_cause_summary', 'n/a')}\n\n"
-            "## Validation\n"
+            "## 错误摘要\n"
+            f"- 状态：`{report_payload.get('status', 'unknown')}`\n\n"
+            "## 根因分析\n"
+            f"{report_payload.get('root_cause_summary', '无')}\n\n"
+            "## 验证结果\n"
             f"{validation_lines}\n"
         )
         pr_result = orchestrator.publisher.create_pr_for_existing_branch(
@@ -190,7 +190,7 @@ def build_provider(config: AppConfig) -> StructuredModelProvider:
     api_key = config.openai.resolved_api_key()
     if not api_key:
         raise ModelProviderError(
-            f"Missing model API key. Set {config.openai.api_key_env_var} or add openai.api_key to agentfix.local.yaml."
+            f"缺少模型 API Key。请设置 {config.openai.api_key_env_var}，或在 agentfix.local.yaml 中配置 openai.api_key。"
         )
     return OpenAIResponsesProvider(
         model=config.openai.model,
@@ -222,7 +222,7 @@ def _current_branch(repo: Path) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        raise RuntimeError("Unable to determine current git branch.")
+        raise RuntimeError("无法确定当前 Git 分支。")
     return completed.stdout.strip()
 
 
@@ -234,6 +234,7 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
     return {
         "config_path": str(Path(config_path).resolve()) if config_path else str(Path("agentfix.yaml").resolve()),
         "agent_topology": {
+            "incident_planner": "IncidentPlanner",
             "orchestrator": "RepairOrchestrator",
             "analysis_agent": "AnalysisAgent",
             "patch_agent": "PatchAgent",
@@ -245,13 +246,15 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
         },
         "workflow": [
             "ingest incident log",
-            "collect repo context",
+            "planner classifies the incident as ignored, report_only, needs_more_context, or repair_attempt",
+            "report-only decisions write records and optionally notify Feishu without editing code",
+            "repair_attempt decisions collect repo context",
             "analysis agent produces root cause and candidate files",
             "patch agent produces minimal file updates",
             "generated test agent can add incident-specific regression tests before publishing",
             "patch engine enforces guardrails",
-            "validator runs py_compile and optional pytest",
-            "publisher creates branch, commit, push, and GitHub Draft PR",
+            "validator runs py_compile, configured tests, service checks, and log scanning",
+            "publisher creates branch, commit, push, and GitHub Draft PR after validation",
             "agent server accepts incident and GitHub webhooks, writes repair records, and notifies Feishu",
         ],
         "configuration": {
@@ -265,6 +268,8 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
             "max_patch_lines": config.guardrails.max_patch_lines,
             "server_host": config.server.host,
             "server_port": config.server.port,
+            "planner_enabled": config.agent.planner.enabled,
+            "planner_allowed_tools": config.agent.planner.allowed_tools,
             "targets": sorted(config.targets),
             "generated_tests_enabled_targets": sorted(
                 name for name, target in config.targets.items() if target.generated_tests.enabled

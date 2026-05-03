@@ -92,6 +92,42 @@ class GeneratedTestSettings(BaseModel):
     max_files: int = 1
 
 
+class PlannerSettings(BaseModel):
+    enabled: bool = True
+    max_steps: int = 6
+    allowed_tools: list[str] = Field(
+        default_factory=lambda: [
+            "Read Log",
+            "Inspect Config",
+            "Check Runtime",
+            "Search Similar Fixes",
+            "Read Code",
+            "Generate Regression Test",
+            "Run Test",
+            "Git Commit",
+            "Record Repair",
+            "Notify Feishu",
+        ]
+    )
+
+
+class AgentRiskSettings(BaseModel):
+    max_changed_files: int | None = None
+    max_changed_lines: int | None = None
+
+
+class AgentReportSettings(BaseModel):
+    notify_on_ignored: bool = False
+    notify_on_report_only: bool = True
+    notify_on_needs_more_context: bool = True
+
+
+class AgentSettings(BaseModel):
+    planner: PlannerSettings = Field(default_factory=PlannerSettings)
+    risk: AgentRiskSettings = Field(default_factory=AgentRiskSettings)
+    report: AgentReportSettings = Field(default_factory=AgentReportSettings)
+
+
 class TargetSettings(BaseModel):
     repo_full_name: str | None = None
     repo_path: str
@@ -130,9 +166,16 @@ class AppConfig(BaseModel):
     validation: ValidationSettings = Field(default_factory=ValidationSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
     targets: dict[str, TargetSettings] = Field(default_factory=dict)
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     records: RecordsSettings = Field(default_factory=RecordsSettings)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.agent.risk.max_changed_files is not None:
+            self.guardrails.max_changed_files = self.agent.risk.max_changed_files
+        if self.agent.risk.max_changed_lines is not None:
+            self.guardrails.max_patch_lines = self.agent.risk.max_changed_lines
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -165,5 +208,5 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return AppConfig()
     config_path = Path(path)
     if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+        raise FileNotFoundError(f"配置文件不存在：{config_path}")
     return AppConfig.model_validate(_load_yaml(config_path))
