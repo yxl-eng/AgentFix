@@ -1,62 +1,90 @@
-# AgentFix Console (桌面 GUI) 使用说明书
+# AgentFix 桌面 GUI 使用说明
 
-本桌面端 GUI 基于 Python 内置的 `tkinter` 库开发，旨在为 AgentFix 提供一个轻量、无需额外安装复杂依赖的“开箱即用”工作台。它完整映射了底层配置（`agentfix.yaml`、`agentfix.local.yaml`）以及执行记录（`records/`）的管理能力。
+AgentFix 桌面端基于 Python 内置 `tkinter` 实现，不需要额外启动网页控制台。它面向普通使用者提供一个本地工作台，用来查看事故记录、编辑密钥和配置、管理目标服务，并手动触发一次修复。
 
-## 如何启动
+## 启动
 
-在终端中执行以下命令即可启动桌面控制台：
+在项目根目录运行：
 
-```bash
+```powershell
 python gui.py
 ```
 
----
+如果当前环境里 `python` 不可用，可以使用你的 conda 环境：
 
-## 核心功能模块
+```powershell
+conda run --no-capture-output -n agentfix311 python gui.py
+```
 
-GUI 左侧提供了一级导航菜单，将 AgentFix 的核心能力划分为以下六大模块：
+## 配置保存位置
 
-### 1. 总览看板 (Dashboard)
-这是启动后的默认首页，主要用于全局了解当前 Agent 的运行健康度和修复成果。
-- **KPI 卡片**：动态展示“今日事故数”、“修复成功率”、“待人工确认”等核心指标。
-- **运行状态**：实时展示 Agent 服务、Webhook 监听是否活跃。
-- **风险提醒**：如果在本地环境中未检测到必需的关键环境变量（如 `OPENAI_API_KEY`），底部会亮起醒目的黄色警示条。
-- **最近修复记录**：一个精简版的表格，快速概览最近处理的几个事故状态及 PR。
+GUI 会读取：
 
-### 2. 事故列表 (Incidents)
-用于统一管理和审计所有触发过的异常记录。
-- **多维度筛选**：支持按 `状态 (Status)`、`目标仓库 (Target)`、`来源 (Source)` 以及 `是否包含 PR` 进行复合过滤。
-- **双击详情**：双击列表中的任意一行，即可弹出一个极其详尽的 **事故详情 (Incident Detail)** 面板。
-- **右键菜单**：右键单击某行可快速“复制事故 ID”或“在浏览器中打开生成的 PR”。
+1. `agentfix.yaml`
+2. `agentfix.local.yaml`
 
-#### ↳ 事故详情面板 (Incident Detail)
-该面板是审计核心，分为 6 个标签页：
-1. **概览 (Overview)**：展示核心摘要，并有绿色 Tag 直观标识“✓ 验证通过”、“✓ 已生成测试”等核心成就。
-2. **日志 (Log)**：模拟终端展示报错堆栈，并对 `Traceback`、`Error`、`Exception` 等关键字进行高亮。
-3. **分析 (Analysis)**：结构化展示大模型推断的“根因摘要”、“修复计划”、“验证重点”和“候选文件及置信度”。
-4. **补丁 (Patch)**：以黑底绿字的极客风格展示生成的代码 Diff。
-5. **验证 (Validation)**：通过独立的卡片罗列 Agent 执行过的所有终端命令（如 `pytest`），并带有明确的返回码及完整 stdout/stderr 输出。
-6. **产物 (Artifacts)**：提供了一键 `[复制路径]` 和 `[在文件夹中打开]` 按钮，方便快速定位本地生成的 JSON 和 Markdown 记录。
+保存时写入 `agentfix.local.yaml`。这个文件适合放本机路径、真实仓库名和密钥，默认不应该提交到 Git。
 
-### 3. 配置中心 (Configuration)
-用于可视化编辑核心配置文件 `agentfix.yaml`。
-- **来源感知**：每个输入框右侧都会明确标注该配置是来源于 `[agentfix.yaml]`、`[local.yaml]`、`[系统默认]` 还是 `[环境变量]`，彻底告别配置覆盖的困惑。
-- **敏感凭据隔离**：
-  - 支持直接在界面录入 OpenAI API Key、GitHub Token 等敏感值。
-  - 这些值在界面上默认以 `***` 掩码显示（可点击 👁 切换）。
-  - 保存时，这些敏感值会被**安全隔离**，并单独回写到不被 Git 追踪的 `agentfix.local.yaml` 文件中。
+## 页面功能
 
-### 4. 目标管理 (Targets)
-专门用于管理 AgentFix 监控的目标项目列表。
-- **卡片式总览**：每个配置好的 Target 独占一个卡片，清晰展示 Repo Path、Log File 以及该目标是否已配置验证脚本/Webhook 的能力徽章。
-- **全生命周期管理**：提供 `+ 新增 Target`、`编辑`、`复制 (Duplicate)`、`删除` 按钮，所有变更实时回写 YAML 文件。
+### 总览
 
-### 5. 系统状态 (System)
-相当于一个可视化的 `doctor` 自检命令，用于全方位排查当前环境是否 Ready。
-- **凭据状态**：检测当前运行环境是否加载了必需的环境变量。已配置的项会安全地显示为 `***`，未配置的会标红报警。
-- **配置健康度**：自动扫描 YAML 中配置的所有 `records_dir`、`artifacts_dir` 和各个 Target 的 `repo_path`，并在本地磁盘上校验它们是否存在。如果有路径不存在，会在此处统计并报出“非法路径数量”。
+展示当前 records 统计，包括总事件、已创建 PR、只报告和已忽略事件，并列出最近事故。
 
-### 6. 手动触发修复 (Manual Run)
-为不想使用 CLI 命令行的用户提供的一个快捷触发入口。
-- 提供文件选择器快速定位“目标仓库”和“异常日志文件”。
-- 点击“▶ 运行修复”后，AgentFix 的执行日志会在下方的文本框中实时滚动输出。
+### 事故记录
+
+左侧是 `records/*.json` 列表，支持按状态筛选和关键词搜索。右侧展示当前事故的处理结论、根因类型、风险等级、PR、证据、人工处理建议和工具调用链路。
+
+### 配置中心
+
+可以直接修改模型、GitHub、飞书、Planner、风控、server、records 和全局验证配置。
+
+密钥类字段默认隐藏，包括：
+
+- 模型 / ARK API Key
+- GitHub 访问令牌
+- 飞书机器人地址
+- 飞书签名密钥
+
+点击字段右侧的“预览”可以临时显示明文，再点击“隐藏”恢复掩码。配置页面只展示可直接填写的密钥项，不会在界面上打印密钥内容。
+
+勾选项使用“已启用 / 未启用”按钮，不使用系统 checkbox，因此不会出现选中后显示为 `×` 的问题。
+
+### 目标服务
+
+用于配置被 AgentFix 监控和修复的本地服务仓库。常用字段包括：
+
+- `repo_full_name`：GitHub 仓库名，例如 `owner/repo`
+- `repo_path`：目标服务在本机的路径
+- `base_branch`：PR 的目标分支
+- `service_log_file`：Agent watch 的日志文件
+- `start_command`：验证时启动服务的命令
+- `healthcheck_url`：服务健康检查地址
+- `test_commands`：已有测试命令，每行一个
+- `verification_requests`：服务启动后要请求的接口，JSON 数组格式
+- `generated_tests`：自动生成回归测试相关配置
+
+配置页和目标服务页支持鼠标滚轮滚动，鼠标在输入框、文本框或按钮区域上方时也会滚动当前页面。
+
+### 手动运行
+
+选择本地目标仓库和日志文件后，可以触发一次：
+
+```powershell
+python -m agentfix run --repo <repo> --log-file <log> --base-branch <branch>
+```
+
+默认启用“只验证，不创建 PR”。关闭后才会按 CLI 能力继续创建分支、commit、push 和 Draft PR。
+
+## 完整链路运行
+
+1. 在 GUI 的“配置中心”填好模型密钥、GitHub 访问令牌和飞书机器人地址。
+2. 在“目标服务”配置目标服务仓库路径、GitHub 仓库名、日志文件、测试命令和服务验证方式。
+3. 启动 Agent 服务：
+
+```powershell
+agentfix serve --host 127.0.0.1 --port 8080 --watch
+```
+
+4. 通过目标服务页面触发错误，或发送 incident webhook。
+5. 回到 GUI 的“事故记录”查看 Planner 决策、工具调用、修复结果、PR 链接和人工处理建议。

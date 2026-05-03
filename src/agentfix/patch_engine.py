@@ -32,9 +32,9 @@ class PatchEngine:
         root = Path(repo_path).resolve()
         normalized_allowed = {self._normalize(path) for path in allowed_paths}
         if not normalized_allowed and proposal.patches:
-            raise PatchGuardrailError("No approved files available for editing.")
+            raise PatchGuardrailError("没有可编辑的已批准文件。")
         if len(proposal.patches) > guardrails.max_changed_files:
-            raise PatchGuardrailError("Patch proposal exceeds the maximum file count.")
+            raise PatchGuardrailError("补丁方案超过最大修改文件数限制。")
 
         changed_files: list[str] = []
         diff_chunks: list[str] = []
@@ -44,11 +44,11 @@ class PatchEngine:
             relative_path = self._normalize(file_patch.path)
             target_path = (root / relative_path).resolve()
             if normalized_allowed and relative_path not in normalized_allowed:
-                raise PatchGuardrailError(f"Patch targets non-approved file: {relative_path}")
+                raise PatchGuardrailError(f"补丁试图修改未批准文件：{relative_path}")
             if not target_path.is_relative_to(root):
-                raise PatchGuardrailError(f"Patch escapes repository root: {relative_path}")
+                raise PatchGuardrailError(f"补丁路径越出了仓库目录：{relative_path}")
             if target_path.name in BLOCKED_FILENAMES:
-                raise PatchGuardrailError(f"Patch targets blocked dependency file: {relative_path}")
+                raise PatchGuardrailError(f"补丁试图修改被禁止的依赖文件：{relative_path}")
 
             original = ""
             if target_path.exists():
@@ -67,7 +67,7 @@ class PatchEngine:
 
             patch_line_count += self._count_changed_lines(diff)
             if patch_line_count > guardrails.max_patch_lines:
-                raise PatchGuardrailError("Patch proposal exceeds the maximum patch size.")
+                raise PatchGuardrailError("补丁方案超过最大修改行数限制。")
 
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(file_patch.updated_content, encoding="utf-8")

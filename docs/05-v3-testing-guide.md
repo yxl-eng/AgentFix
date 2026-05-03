@@ -244,7 +244,7 @@ V3 生成测试的关键字段在 record 里：
 - `postfix_passed: true`：修复后，同一个测试通过。
 - `committed: true`：这个稳定的回归测试会和业务修复一起进入 PR。
 
-如果 `fallback_reason` 有内容，说明生成测试阶段没有形成稳定闭环，Agent 会回退到 V2 验证链路。
+如果 `fallback_reason` 有内容，说明生成测试阶段没有形成稳定闭环，Agent 会继续执行既有验证链路。
 
 ## 6. 测试 Watch 触发
 

@@ -87,6 +87,8 @@ def test_incident_webhook_processes_once_and_records_tool_calls(tmp_path) -> Non
     assert "Git Commit/PR" in tool_names
     assert "Record Repair" in tool_names
     assert "Notify Feishu" in tool_names
+    assert "Incident Planner" in tool_names
+    assert first["record"]["disposition"] == "repair_attempt"
 
 
 def test_github_webhook_only_processes_bug_issue_for_configured_repo(tmp_path) -> None:
@@ -121,3 +123,36 @@ def test_github_webhook_ignores_non_bug_issue(tmp_path) -> None:
 
     assert response["status"] == "ignored"
     assert orchestrator.calls == 0
+
+
+def test_planner_ignores_benign_error_without_repair(tmp_path) -> None:
+    processor, orchestrator = _processor(tmp_path)
+
+    response = processor.handle_incident_payload(
+        {
+            "target": "svc",
+            "incident_id": "benign-1",
+            "log_text": "level=error http 404 expected business rejection for missing optional avatar",
+        }
+    )
+
+    assert response["status"] == "ignored"
+    assert orchestrator.calls == 0
+    assert response["record"]["root_cause_type"] == "benign_log"
+
+
+def test_planner_reports_environment_failure_without_repair(tmp_path) -> None:
+    processor, orchestrator = _processor(tmp_path)
+
+    response = processor.handle_incident_payload(
+        {
+            "target": "svc",
+            "incident_id": "env-1",
+            "log_text": "Traceback\nConnection refused while connecting to redis://localhost:6379",
+        }
+    )
+
+    assert response["status"] == "reported"
+    assert orchestrator.calls == 0
+    assert response["record"]["human_action_required"] is True
+    assert response["record"]["root_cause_type"] == "external_dependency"

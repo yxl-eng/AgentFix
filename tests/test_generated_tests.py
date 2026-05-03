@@ -214,3 +214,101 @@ def test_orchestrator_commits_stable_generated_test(temp_repo, fixtures_root, tm
     assert result.generated_test.committed is True
     assert "tests/test_agentfix_generated.py" in result.changed_files
     assert "app/service.py" in result.changed_files
+
+
+def test_orchestrator_discards_unstable_generated_test_when_existing_validation_passes(
+    temp_repo,
+    fixtures_root,
+    tmp_path,
+) -> None:
+    repo = temp_repo("none_attr_repo")
+    config = AppConfig()
+    config.runtime.artifact_root = str(tmp_path / "artifacts")
+    target = TargetSettings(repo_path=str(repo), base_branch="main")
+    target.generated_tests.fallback_to_v2_on_failure = True
+
+    provider = StaticProvider(
+        [
+            AnalysisResult(
+                root_cause_summary="The code dereferences user.profile even when user is None.",
+                confidence=0.93,
+                candidate_targets=[
+                    RepairIntent(
+                        path="app/service.py",
+                        rationale="Traceback points directly to this file.",
+                        confidence=0.93,
+                        change_summary="Return None when user is missing.",
+                    )
+                ],
+                repair_plan=["Guard the attribute access before dereferencing profile."],
+                validation_focus=["Verify the None case and the happy path test."],
+            ),
+            GeneratedTestProposal(
+                summary="Cover missing user regression but includes an unstable extra assertion.",
+                framework="python-pytest",
+                test_path="tests/test_agentfix_generated.py",
+                test_name="test_agentfix_missing_user_returns_none",
+                updated_content=(
+                    "from __future__ import annotations\n\n"
+                    "from app.service import get_user_email\n\n\n"
+                    "class Profile:\n"
+                    "    def __init__(self, email: str) -> None:\n"
+                    "        self.email = email\n\n\n"
+                    "class User:\n"
+                    "    def __init__(self, email: str) -> None:\n"
+                    "        self.profile = Profile(email)\n\n\n"
+                    "def test_agentfix_missing_user_returns_none() -> None:\n"
+                    "    assert get_user_email(None) is None\n\n\n"
+                    "def test_agentfix_unrelated_assertion_is_not_stable() -> None:\n"
+                    "    assert get_user_email(User('dev@example.com')) == 'wrong@example.com'\n"
+                ),
+                expected_behavior="Missing user should return None.",
+                confidence=0.7,
+            ),
+            {
+                "summary": "Guard None before accessing profile.",
+                "patches": [
+                    {
+                        "path": "app/service.py",
+                        "reason": "Prevent NoneType attribute access.",
+                        "updated_content": (
+                            "from __future__ import annotations\n\n\n"
+                            "def get_user_email(user):\n"
+                            "    if user is None or getattr(user, 'profile', None) is None:\n"
+                            "        return None\n"
+                            "    return user.profile.email\n"
+                        ),
+                    }
+                ],
+                "validation_notes": ["Run service tests."],
+            },
+        ]
+    )
+
+    orchestrator = RepairOrchestrator(
+        config=config,
+        ingestor=IncidentIngestor(),
+        collector=RepoContextCollector(config.guardrails),
+        analyzer=AnalysisAgent(provider, config),
+        patch_agent=PatchAgent(provider, config),
+        patch_engine=PatchEngine(),
+        validator=Validator(),
+        publisher=GitHubPublisher(config.github),
+        generated_test_agent=GeneratedTestAgent(provider, config),
+    )
+
+    result = orchestrator.run(
+        repo,
+        fixtures_root / "logs" / "none_attr.log",
+        publish=False,
+        target_config=target,
+    )
+
+    assert result.status == "validated"
+    assert result.generated_test is not None
+    assert result.generated_test.prefix_failed is True
+    assert result.generated_test.postfix_passed is False
+    assert result.generated_test.committed is False
+    assert result.generated_test.fallback_reason is not None
+    assert result.changed_files == ["app/service.py"]
+    assert "tests/test_agentfix_generated.py" not in result.changed_files
