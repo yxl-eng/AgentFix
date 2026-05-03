@@ -12,6 +12,10 @@ import tkinter as tk
 from tkinter import ttk
 
 import yaml
+import pystray
+from PIL import Image, ImageDraw
+from win10toast import ToastNotifier
+import os
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
@@ -119,6 +123,15 @@ class AgentFixGUI(tk.Tk):
         self.secret_buttons: dict[tuple[str, ...], ttk.Button] = {}
         self.check_refreshers: list[callable] = []
 
+        # Background Service Variables
+        self.background_service_enabled = tk.BooleanVar(value=False)
+        self.agent_process = None
+
+        # Tray and Toast setup
+        self.toaster = ToastNotifier()
+        self.icon = None
+        self.protocol('WM_DELETE_WINDOW', self.hide_window)
+
         self._configure_style()
         self.load_config()
         self._build_shell()
@@ -128,8 +141,9 @@ class AgentFixGUI(tk.Tk):
     def _configure_style(self) -> None:
         style = ttk.Style(self)
         themes = set(style.theme_names())
-        if sys.platform.startswith("win") and "vista" in themes:
-            style.theme_use("vista")
+        if "clam" in themes:
+            style.theme_use("clam")
+            
         style.configure(".", font=("Microsoft YaHei UI", 10))
         style.configure("TFrame", background="#f7f8fb")
         style.configure("Card.TFrame", background="#ffffff", relief="flat")
@@ -140,7 +154,14 @@ class AgentFixGUI(tk.Tk):
         style.configure("Muted.TLabel", background="#ffffff", foreground="#646a73")
         style.configure("SidebarTitle.TLabel", background="#ffffff", foreground="#1f2329", font=("Microsoft YaHei UI", 16, "bold"))
         style.configure("SidebarSub.TLabel", background="#ffffff", foreground="#646a73", font=("Microsoft YaHei UI", 9))
-        style.configure("Primary.TButton", background="#3370ff", foreground="#ffffff")
+        
+        # Modern Button Styles
+        style.configure("TButton", background="#ffffff", foreground="#1f2329", bordercolor="#d0d3d6", lightcolor="#ffffff", darkcolor="#ffffff", borderwidth=1, focuscolor="#ffffff", padding=(12, 6))
+        style.map("TButton", background=[("active", "#f2f3f5"), ("pressed", "#e5e6eb")])
+        
+        style.configure("Primary.TButton", background="#3370ff", foreground="#ffffff", bordercolor="#3370ff", lightcolor="#3370ff", darkcolor="#3370ff", borderwidth=1, focuscolor="#3370ff", padding=(12, 6))
+        style.map("Primary.TButton", background=[("active", "#1e5def"), ("pressed", "#1043c7")])
+        
         style.configure("Treeview", rowheight=34, fieldbackground="#ffffff", background="#ffffff")
         style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 10, "bold"), background="#f7f9fc", foreground="#646a73")
 
@@ -405,6 +426,22 @@ class AgentFixGUI(tk.Tk):
         page = self.pages["manual"]
         self.make_header(page, "手动运行", "直接选择本地仓库和日志文件，触发一次 AgentFix 修复")
         card = self.make_card(page, "运行参数")
+        
+        # Add background service toggle
+        bg_row = ttk.Frame(card)
+        bg_row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(bg_row, text="守护模式", width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        bg_btn = self._make_check(bg_row, self.background_service_enabled, "关闭窗口后，后台常驻监听 (Agent Serve)")
+        
+        def toggle_service():
+            if not self.background_service_enabled.get():
+                self.stop_background_service()
+                
+        bg_btn.config(command=lambda: [self.background_service_enabled.set(not self.background_service_enabled.get()), self._refresh_checks(), toggle_service()])
+        bg_btn.pack(side=tk.LEFT)
+        
+        ttk.Separator(card).pack(fill=tk.X, pady=8)
+        
         self.manual_repo = tk.StringVar()
         self.manual_log = tk.StringVar()
         self.manual_branch = tk.StringVar(value="main")
@@ -485,23 +522,24 @@ class AgentFixGUI(tk.Tk):
     def _make_check(self, parent, variable: tk.BooleanVar, label: str) -> tk.Button:
         button = tk.Button(
             parent,
-            bd=0,
+            bd=1,
+            relief=tk.SOLID,
             anchor="w",
-            padx=10,
-            pady=7,
+            padx=12,
+            pady=8,
             bg="#ffffff",
-            fg="#646a73",
+            fg="#1f2329",
             activebackground="#edf3ff",
             activeforeground="#3370ff",
-            font=("Microsoft YaHei UI", 10),
+            font=("Microsoft YaHei UI", 10, "bold"),
             cursor="hand2",
         )
 
         def refresh() -> None:
             if variable.get():
-                button.configure(text=f"已启用  {label}", bg="#edf3ff", fg="#3370ff")
+                button.configure(text=f"☑  {label} (已开启)", bg="#edf3ff", fg="#3370ff", highlightbackground="#3370ff")
             else:
-                button.configure(text=f"未启用  {label}", bg="#ffffff", fg="#646a73")
+                button.configure(text=f"☐  {label} (未开启)", bg="#ffffff", fg="#646a73", highlightbackground="#e5e8ef")
 
         def toggle() -> None:
             variable.set(not variable.get())
@@ -883,6 +921,88 @@ class AgentFixGUI(tk.Tk):
         path = filedialog.askopenfilename()
         if path:
             variable.set(path)
+
+    # ================= Tray and Toast Methods =================
+
+    def create_image(self):
+        image = Image.new('RGB', (64, 64), color=(44, 62, 80))
+        dc = ImageDraw.Draw(image)
+        dc.rectangle([(16, 16), (48, 48)], fill=(46, 204, 113))
+        return image
+
+    def hide_window(self):
+        # If background service is NOT enabled, clicking X should just quit the app normally
+        if not self.background_service_enabled.get():
+            self.quit_window()
+            return
+            
+        # Otherwise, hide to tray
+        self.withdraw()
+        if not self.icon:
+            menu = pystray.Menu(
+                pystray.MenuItem('显示面板 (Show)', self.show_window, default=True),
+                pystray.MenuItem('完全退出 (Quit)', self.quit_window)
+            )
+            self.icon = pystray.Icon("AgentFix", self.create_image(), "AgentFix 监控守护中", menu)
+            
+            # pystray has an issue on some Windows versions where run() crashes 
+            # if it receives certain unhandled window messages.
+            # Running it in a separate thread usually helps, but we must catch errors.
+            def run_icon():
+                try:
+                    self.icon.run()
+                except Exception as e:
+                    print(f"Tray icon error (ignored): {e}")
+
+            # Start tray icon in a separate thread so it doesn't block tkinter
+            threading.Thread(target=run_icon, daemon=True).start()
+            
+            # Start background service if not already started
+            if not self.agent_process:
+                self.start_background_service()
+
+    def show_window(self, icon=None, item=None):
+        if self.icon:
+            self.icon.stop()
+            self.icon = None
+        self.after(0, self.deiconify)
+
+    def quit_window(self, icon=None, item=None):
+        if self.icon:
+            self.icon.stop()
+        self.stop_background_service()
+        self.after(0, self.destroy)
+
+    def stop_background_service(self):
+        if self.agent_process:
+            try:
+                self.agent_process.terminate()
+                self.agent_process.wait(timeout=3)
+            except Exception:
+                self.agent_process.kill()
+            self.agent_process = None
+
+    def start_background_service(self):
+        def run_service():
+            try:
+                env = os.environ.copy()
+                src_path = os.path.abspath("src")
+                if "PYTHONPATH" in env:
+                    env["PYTHONPATH"] = f"{src_path}{os.pathsep}{env['PYTHONPATH']}"
+                else:
+                    env["PYTHONPATH"] = src_path
+                    
+                self.agent_process = subprocess.Popen(
+                    [sys.executable, "-m", "agentfix", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+                )
+            except Exception as e:
+                print(f"Failed to start background service: {e}")
+                
+        threading.Thread(target=run_service, daemon=True).start()
 
 
 if __name__ == "__main__":
