@@ -1,12 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+DEFAULT_CONFIG_FILE = Path("patchpilot.yaml")
+DEFAULT_LOCAL_CONFIG_FILE = Path("patchpilot.local.yaml")
+LEGACY_CONFIG_FILE = Path("agentfix.yaml")
+LEGACY_LOCAL_CONFIG_FILE = Path("agentfix.local.yaml")
 
 
 class OpenAISettings(BaseModel):
@@ -63,15 +69,15 @@ class ValidationSettings(BaseModel):
 
 
 class RuntimeSettings(BaseModel):
-    artifact_root: str = ".agentfix-artifacts"
-    max_repair_attempts: int = 2
+    artifact_root: str = ".patchpilot-artifacts"
+    max_repair_attempts: int = 3
 
 
 class ServerSettings(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8080
     poll_interval_seconds: float = 10.0
-    state_path: str = ".agentfix-state/events.sqlite3"
+    state_path: str = ".patchpilot-state/events.sqlite3"
 
 
 class VerificationRequestSettings(BaseModel):
@@ -87,9 +93,30 @@ class GeneratedTestSettings(BaseModel):
     enabled: bool = True
     framework: str = "auto"
     commit_when_stable: bool = True
-    fallback_to_v2_on_failure: bool = True
+    failure_policy: Literal["continue_existing_validation", "needs_human_verification"] = (
+        "continue_existing_validation"
+    )
+    fallback_to_v2_on_failure: bool | None = Field(default=None, exclude=True)
     require_prefix_failure: bool = True
     max_files: int = 1
+
+    @model_validator(mode="after")
+    def _map_legacy_fallback_policy(self) -> "GeneratedTestSettings":
+        if self.fallback_to_v2_on_failure is not None:
+            self.failure_policy = (
+                "continue_existing_validation"
+                if self.fallback_to_v2_on_failure
+                else "needs_human_verification"
+            )
+        return self
+
+    @property
+    def should_continue_existing_validation(self) -> bool:
+        return self.failure_policy == "continue_existing_validation"
+
+    @property
+    def should_require_human_verification(self) -> bool:
+        return self.failure_policy == "needs_human_verification"
 
 
 class PlannerSettings(BaseModel):
@@ -198,14 +225,20 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 def load_config(path: str | Path | None = None) -> AppConfig:
     if path is None:
-        default = Path("agentfix.yaml")
-        if default.exists():
-            config_data = _load_yaml(default)
-            local_override = Path("agentfix.local.yaml")
-            if local_override.exists():
-                config_data = _deep_merge(config_data, _load_yaml(local_override))
-            return AppConfig.model_validate(config_data)
-        return AppConfig()
+        config_data: dict[str, Any] = {}
+        base_path = DEFAULT_CONFIG_FILE if DEFAULT_CONFIG_FILE.exists() else LEGACY_CONFIG_FILE
+        if base_path.exists():
+            config_data = _load_yaml(base_path)
+
+        local_override = (
+            DEFAULT_LOCAL_CONFIG_FILE
+            if DEFAULT_LOCAL_CONFIG_FILE.exists()
+            else LEGACY_LOCAL_CONFIG_FILE
+        )
+        if local_override.exists():
+            config_data = _deep_merge(config_data, _load_yaml(local_override))
+
+        return AppConfig.model_validate(config_data)
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"配置文件不存在：{config_path}")

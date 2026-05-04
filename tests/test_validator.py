@@ -1,12 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 
-from agentfix.config import GuardrailSettings, TargetSettings, ValidationSettings, VerificationRequestSettings
-from agentfix.incident_ingest import IncidentIngestor
-from agentfix.repo_context import RepoContextCollector
-from agentfix.validator import Validator
+from patchpilot.config import GuardrailSettings, TargetSettings, ValidationSettings, VerificationRequestSettings
+from patchpilot.incident_ingest import IncidentIngestor
+from patchpilot.repo_context import RepoContextCollector
+from patchpilot.validator import Validator
 
 
 def test_validator_runs_py_compile_and_pytest(temp_repo, fixtures_root) -> None:

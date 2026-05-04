@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import importlib.util
@@ -7,22 +7,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agentfix.agent_server import AgentProcessor, AgentServer
-from agentfix.config import AppConfig, load_config
-from agentfix.event_state import EventStateStore
-from agentfix.feishu import FeishuNotifier
-from agentfix.generated_tests import FrameworkDetector, GeneratedTestAgent, GeneratedTestRunner, GeneratedTestValidator
-from agentfix.incident_ingest import IncidentIngestor
-from agentfix.patch_engine import PatchEngine
-from agentfix.publisher import GitHubPublisher
-from agentfix.providers.base import ModelProviderError, StructuredModelProvider
-from agentfix.providers.openai_provider import OpenAIResponsesProvider
-from agentfix.repair_records import RepairRecordWriter
-from agentfix.repair_orchestrator import RepairOrchestrator
-from agentfix.repo_context import RepoContextCollector
-from agentfix.services.analysis import AnalysisAgent
-from agentfix.services.patching import PatchAgent
-from agentfix.validator import Validator
+from patchpilot.agent_server import AgentProcessor, AgentServer
+from patchpilot.config import AppConfig, load_config
+from patchpilot.event_state import EventStateStore
+from patchpilot.feishu import FeishuNotifier
+from patchpilot.generated_tests import FrameworkDetector, GeneratedTestAgent, GeneratedTestRunner, GeneratedTestValidator
+from patchpilot.incident_ingest import IncidentIngestor
+from patchpilot.patch_engine import PatchEngine
+from patchpilot.publisher import GitHubPublisher
+from patchpilot.providers.base import ModelProviderError, StructuredModelProvider
+from patchpilot.providers.openai_provider import OpenAIResponsesProvider
+from patchpilot.repair_records import RepairRecordWriter
+from patchpilot.repair_orchestrator import RepairOrchestrator
+from patchpilot.repo_context import RepoContextCollector
+from patchpilot.services.analysis import AnalysisAgent
+from patchpilot.services.patching import PatchAgent
+from patchpilot.validator import Validator
 
 
 class UnavailableProvider(StructuredModelProvider):
@@ -39,7 +39,7 @@ class UnavailableProvider(StructuredModelProvider):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Agent-based service auto-repair CLI for Python repositories")
-    parser.add_argument("--config", default=None, help="Path to agentfix.yaml")
+    parser.add_argument("--config", default=None, help="Path to patchpilot.yaml")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("doctor", help="Show runtime configuration, agent topology, and credential presence")
@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr_parser.add_argument("--base-branch", default="main", help="Base branch for the pull request")
     pr_parser.add_argument("--report-file", required=True, help="Path to repair-result.json")
 
-    serve_parser = subparsers.add_parser("serve", help="Run the AgentFix webhook and watch service")
+    serve_parser = subparsers.add_parser("serve", help="Run the PatchPilot webhook and watch service")
     serve_parser.add_argument("--host", default=None, help="Host to bind. Defaults to server.host from config")
     serve_parser.add_argument("--port", type=int, default=None, help="Port to bind. Defaults to server.port from config")
     serve_parser.add_argument("--watch", action="store_true", help="Enable configured service log polling")
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             publish=not args.no_pr,
         )
         print(_to_json(result.model_dump(mode="json")))
-        return 0 if result.status in {"validated", "pr_created"} else 1
+        return 0 if result.status == "fixed" else 1
 
     if args.command == "analyze":
         result = orchestrator.analyze(args.repo, args.log_file, base_branch=args.base_branch)
@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "pr":
         report_payload = json.loads(Path(args.report_file).read_text(encoding="utf-8"))
         branch = report_payload.get("branch") or _current_branch(Path(args.repo))
-        title = f"[AgentFix] 自动修复：{report_payload.get('root_cause_summary', '自动修复')}"
+        title = f"[PatchPilot] 自动修复：{report_payload.get('root_cause_summary', '自动修复')}"
         validation_lines = "\n".join(
             f"- `{command}`" for command in report_payload.get("tests_run", [])
         ) or "- 无"
@@ -190,7 +190,7 @@ def build_provider(config: AppConfig) -> StructuredModelProvider:
     api_key = config.openai.resolved_api_key()
     if not api_key:
         raise ModelProviderError(
-            f"缺少模型 API Key。请设置 {config.openai.api_key_env_var}，或在 agentfix.local.yaml 中配置 openai.api_key。"
+            f"缺少模型 API Key。请设置 {config.openai.api_key_env_var}，或在 patchpilot.local.yaml 中配置 openai.api_key。"
         )
     return OpenAIResponsesProvider(
         model=config.openai.model,
@@ -231,8 +231,11 @@ def _module_available(name: str) -> bool:
 
 
 def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str, object]:
+    default_config_path = Path("patchpilot.yaml")
+    if config_path is None and not default_config_path.exists() and Path("agentfix.yaml").exists():
+        default_config_path = Path("agentfix.yaml")
     return {
-        "config_path": str(Path(config_path).resolve()) if config_path else str(Path("agentfix.yaml").resolve()),
+        "config_path": str(Path(config_path).resolve()) if config_path else str(default_config_path.resolve()),
         "agent_topology": {
             "incident_planner": "IncidentPlanner",
             "orchestrator": "RepairOrchestrator",
@@ -250,7 +253,7 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
             "report-only decisions write records and optionally notify Feishu without editing code",
             "repair_attempt decisions collect repo context",
             "analysis agent produces root cause and candidate files",
-            "patch agent produces minimal file updates",
+            "patch agent iterates on file updates with validation feedback until fixed or max attempts is reached",
             "generated test agent can add incident-specific regression tests before publishing",
             "patch engine enforces guardrails",
             "validator runs py_compile, configured tests, service checks, and log scanning",
@@ -270,6 +273,7 @@ def build_doctor_report(config: AppConfig, config_path: str | None) -> dict[str,
             "server_port": config.server.port,
             "planner_enabled": config.agent.planner.enabled,
             "planner_allowed_tools": config.agent.planner.allowed_tools,
+            "max_repair_attempts": config.runtime.max_repair_attempts,
             "targets": sorted(config.targets),
             "generated_tests_enabled_targets": sorted(
                 name for name, target in config.targets.items() if target.generated_tests.enabled

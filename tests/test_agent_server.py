@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from agentfix.agent_server import AgentProcessor
-from agentfix.config import AppConfig, RecordsSettings, TargetSettings
-from agentfix.event_state import EventStateStore
-from agentfix.models import RepairResult, ValidationCommandResult, ValidationResult
-from agentfix.repair_records import RepairRecordWriter
+from patchpilot.agent_server import AgentProcessor
+from patchpilot.config import AppConfig, RecordsSettings, TargetSettings
+from patchpilot.event_state import EventStateStore
+from patchpilot.models import RepairResult, ValidationCommandResult, ValidationResult
+from patchpilot.repair_records import RepairRecordWriter
 
 
 class FakeOrchestrator:
@@ -19,14 +19,14 @@ class FakeOrchestrator:
             syntax_check=True,
             tests_run=["npm test"],
             pr_url="https://github.com/org/repo/pull/1",
-            status="pr_created",
+            status="fixed",
             validation=ValidationResult(
                 syntax_check=True,
                 tests_passed=True,
                 tests_executed=True,
                 commands=[ValidationCommandResult(command="npm test", returncode=0)],
             ),
-            branch="agentfix/test",
+            branch="patchpilot/test",
         )
 
 
@@ -77,7 +77,7 @@ def test_incident_webhook_processes_once_and_records_tool_calls(tmp_path) -> Non
     first = processor.handle_incident_payload(payload)
     second = processor.handle_incident_payload(payload)
 
-    assert first["status"] == "pr_created"
+    assert first["status"] == "fixed"
     assert second["status"] == "duplicate"
     assert orchestrator.calls == 1
     tool_names = [tool["name"] for tool in first["record"]["tool_calls"]]
@@ -107,7 +107,7 @@ def test_github_webhook_only_processes_bug_issue_for_configured_repo(tmp_path) -
 
     response = processor.handle_github_payload(payload, headers={"X-GitHub-Event": "issues"})
 
-    assert response["status"] == "pr_created"
+    assert response["status"] == "fixed"
     assert orchestrator.calls == 1
 
 
@@ -152,7 +152,7 @@ def test_planner_reports_environment_failure_without_repair(tmp_path) -> None:
         }
     )
 
-    assert response["status"] == "reported"
+    assert response["status"] == "needs_manual_intervention"
     assert orchestrator.calls == 0
     assert response["record"]["human_action_required"] is True
     assert response["record"]["root_cause_type"] == "external_dependency"

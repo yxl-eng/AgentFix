@@ -1,26 +1,22 @@
-# AgentFix V3 Generated Regression Tests
+# PatchPilot 自动生成回归测试
 
-V3 adds an optional regression-test generation step before the repair patch is created.
+PatchPilot 会尝试根据 incident 日志、候选代码和现有测试风格生成一个聚焦的回归测试。理想闭环是：修复前失败，修复后通过；只有稳定闭环成立，生成的测试才会随业务修复一起进入 PR。
 
-`test_commands` still means "how to run tests". The generated test feature adds the missing second half: it asks the model to create a focused test file for the current incident, runs that new test before the fix, then runs it again after the fix.
+## 流程
 
-## Flow
+1. 解析 incident 日志并收集代码上下文。
+2. 分析根因。
+3. 识别目标仓库测试框架。
+4. 让模型生成一个回归测试文件。
+5. 在临时修复工作区应用测试文件。
+6. 修复前先运行生成测试。
+7. 只有失败原因和 incident 相关时才保留候选测试。
+8. 生成并应用业务修复补丁。
+9. 修复后再次运行生成测试。
+10. 继续运行既有验证：`test_commands`、服务启动、健康检查、接口验证请求和日志扫描。
+11. 如果生成测试稳定，PR 同时包含业务修复和回归测试。
 
-1. Parse the incident log and collect code context.
-2. Analyze the root cause.
-3. Detect the target repository test framework.
-4. Ask the model to generate one regression test file.
-5. Apply that test in the temporary repair workspace.
-6. Run only the generated test before the fix.
-7. Keep the test only if it fails for a non-infrastructure reason.
-8. Generate and apply the repair patch.
-9. Run the generated test again after the fix.
-10. Run the normal V2 validation: `test_commands`, service start, healthcheck, verification requests, and log scan.
-11. If the generated test is stable, include it in the PR with the code fix.
-
-If generated-test creation fails, AgentFix records the reason and falls back to the existing V2 validation path by default.
-
-## Target Config
+## 配置
 
 ```yaml
 targets:
@@ -33,29 +29,25 @@ targets:
       enabled: true
       framework: auto
       commit_when_stable: true
-      fallback_to_v2_on_failure: true
+      failure_policy: continue_existing_validation
       max_files: 1
 ```
 
-Supported first-pass framework detection:
+`failure_policy` 支持：
 
-- Python: `pytest`, `unittest`
-- Node: `jest`, `vitest`, `mocha`
-- Go: `go test`
-- Java: Maven/Gradle JUnit
+- `continue_existing_validation`：生成测试不稳定时不提交测试，继续运行已有验证。这是默认值。
+- `needs_human_verification`：语法/编译检查通过但生成测试修复后仍失败时，不创建 PR，状态为 `needs_human_verification`。
 
-Unsupported or unclear projects fall back to V2.
+旧字段仍兼容：
 
-## Complex Demo
+- `fallback_to_v2_on_failure: true` 映射为 `continue_existing_validation`。
+- `fallback_to_v2_on_failure: false` 映射为 `needs_human_verification`。
 
-`demo_services/fastapi-order-service` is the richer V3 demo. It contains:
+## 支持的测试框架
 
-- FastAPI routes
-- header-based user identity
-- repository and service layers
-- order create/read/cancel endpoints
-- application logging
-- pytest tests
-- an intentional authorization bug in order cancellation
+- Python：`pytest`、`unittest`
+- Node：`jest`、`vitest`、`mocha`
+- Go：`go test`
+- Java：Maven/Gradle JUnit
 
-To use it for the full PR + Feishu demo, create a GitHub repo, add it as the demo service `origin`, push `main`, and update `targets.fastapi-order-service.repo_full_name` in `agentfix.yaml`.
+识别不出的项目会跳过生成测试，继续走既有验证链路。

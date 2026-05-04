@@ -1,15 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from textwrap import dedent
 
-from agentfix.config import AppConfig
-from agentfix.models import AnalysisResult, Incident, RepoContext
-from agentfix.providers.base import StructuredModelProvider
+from patchpilot.config import AppConfig
+from patchpilot.models import AnalysisResult, Incident, RepoContext
+from patchpilot.providers.base import StructuredModelProvider
 
 
 ANALYSIS_INSTRUCTIONS = dedent(
     """
-    你是 AgentFix 的线上事故根因分析专家，负责分析多语言 Web 服务的生产报错。
+    你是 PatchPilot 的线上事故根因分析专家，负责分析多语言 Web 服务的生产报错。
     只返回结构化结果，并遵守这些规则：
     - 根据日志、Traceback 和代码上下文判断最可能的根因。
     - 只选择仓库上下文中真实存在的文件。

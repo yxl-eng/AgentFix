@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - fallback for minimal local doctor/vali
     def wait_exponential(*args, **kwargs):
         return None
 
-from agentfix.providers.base import ModelProviderError, StructuredModelProvider, T
+from patchpilot.providers.base import ModelProviderError, StructuredModelProvider, T
 
 
 class OpenAIResponsesProvider(StructuredModelProvider):

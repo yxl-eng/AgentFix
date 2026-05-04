@@ -1,4 +1,4 @@
-# AgentFix 环境与配置
+﻿# PatchPilot 环境与配置
 
 ## 1. Python 环境
 
@@ -15,13 +15,13 @@ python -m pip install -e ".[dev]"
 安装后应可执行：
 
 ```powershell
-agentfix doctor
+patchpilot doctor
 python -m pytest -q
 ```
 
 ## 2. 凭据
 
-AgentFix 需要三类凭据，按使用场景配置：
+PatchPilot 需要三类凭据，按使用场景配置：
 
 ```powershell
 $env:ARK_API_KEY="your-model-key"
@@ -35,7 +35,7 @@ $env:FEISHU_WEBHOOK_URL="your-feishu-bot-webhook"
 $env:FEISHU_WEBHOOK_SECRET="your-feishu-bot-secret"
 ```
 
-也可以写入 `agentfix.local.yaml`：
+也可以写入 `patchpilot.local.yaml`：
 
 ```yaml
 openai:
@@ -49,14 +49,14 @@ feishu:
   webhook_secret: your-feishu-bot-secret
 ```
 
-`agentfix.local.yaml` 已被 `.gitignore` 忽略，不应提交。
+`patchpilot.local.yaml` 已被 `.gitignore` 忽略，不应提交。
 
 ## 3. 基础配置
 
 复制模板：
 
 ```powershell
-copy agentfix.yaml.example agentfix.yaml
+copy patchpilot.yaml.example patchpilot.yaml
 ```
 
 大模型配置示例：
@@ -135,7 +135,7 @@ server:
   host: 0.0.0.0
   port: 8080
   poll_interval_seconds: 10
-  state_path: .agentfix-state/events.sqlite3
+  state_path: .patchpilot-state/events.sqlite3
 ```
 
 `state_path` 是事件去重库。重复的 `incident_id` 或 GitHub delivery 不会重复创建 PR。
@@ -152,4 +152,4 @@ feishu:
   webhook_secret_env_var: FEISHU_WEBHOOK_SECRET
 ```
 
-`records.auto_commit: true` 会把本次修复记录提交到 AgentFix 仓库，仅提交 `records/` 下本次新增或更新的记录文件。
+`records.auto_commit: true` 会把本次修复记录提交到 PatchPilot 仓库，仅提交 `records/` 下本次新增或更新的记录文件。

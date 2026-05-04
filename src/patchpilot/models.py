@@ -202,6 +202,17 @@ class PullRequestResult(BaseModel):
     body: str
 
 
+class RepairIterationRecord(BaseModel):
+    attempt: int
+    hypothesis: str = ""
+    code_context: list[str] = Field(default_factory=list)
+    generated_test_summary: str = ""
+    patch_summary: str = ""
+    validation_feedback: list[str] = Field(default_factory=list)
+    next_feedback: list[str] = Field(default_factory=list)
+    status: str = "running"
+
+
 class RepairResult(BaseModel):
     root_cause_summary: str
     changed_files: list[str] = Field(default_factory=list)
@@ -228,6 +239,7 @@ class RepairResult(BaseModel):
     human_action_required: bool = False
     human_resolution_steps: list[str] = Field(default_factory=list)
     planner_decision: PlannerDecision | None = None
+    repair_iterations: list[RepairIterationRecord] = Field(default_factory=list)
 
 
 class RepairEvent(BaseModel):

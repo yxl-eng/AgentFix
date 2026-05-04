@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from agentfix.config import FeishuSettings, RecordsSettings
-from agentfix.feishu import FeishuNotifier
-from agentfix.models import AnalysisResult, GeneratedTestResult, RepairRecord, RepairResult
-from agentfix.repair_records import RepairRecordWriter
+from patchpilot.config import FeishuSettings, RecordsSettings
+from patchpilot.feishu import FeishuNotifier
+from patchpilot.models import AnalysisResult, GeneratedTestResult, RepairRecord, RepairResult
+from patchpilot.repair_records import RepairRecordWriter
 
 
 def test_repair_record_writer_creates_json_and_markdown(tmp_path) -> None:
@@ -12,10 +12,10 @@ def test_repair_record_writer_creates_json_and_markdown(tmp_path) -> None:
         incident_id="inc-1",
         target="svc",
         source="incident_webhook",
-        status="pr_created",
+        status="fixed",
         message="Fixed it.",
         pr_url="https://github.com/org/repo/pull/1",
-        repair_result=RepairResult(root_cause_summary="Fixed it.", status="pr_created"),
+        repair_result=RepairResult(root_cause_summary="Fixed it.", status="fixed"),
     )
 
     written = writer.write(record)
@@ -32,12 +32,12 @@ def test_repair_record_markdown_contains_approach_and_test_details(tmp_path) -> 
         incident_id="inc-2",
         target="svc",
         source="incident_webhook",
-        status="validated",
+        status="fixed",
         message="取消订单时先释放库存导致异常。",
         decision_reason="日志包含源码级异常信号。",
         repair_result=RepairResult(
             root_cause_summary="取消订单时先释放库存导致异常。",
-            status="validated",
+            status="fixed",
             analysis=AnalysisResult(
                 root_cause_summary="取消订单时先释放库存导致异常。",
                 confidence=0.9,
@@ -46,7 +46,7 @@ def test_repair_record_markdown_contains_approach_and_test_details(tmp_path) -> 
             generated_test=GeneratedTestResult(
                 attempted=True,
                 framework="python-pytest",
-                test_path="tests/test_agentfix_order.py",
+                test_path="tests/test_patchpilot_order.py",
                 summary="覆盖已支付旧订单取消流程。",
                 expected_behavior="返回 409，不再抛出 KeyError。",
                 test_cases=["test_cancel_paid_legacy_order_returns_409"],
@@ -71,12 +71,12 @@ def test_feishu_card_contains_review_message() -> None:
         incident_id="inc-1",
         target="svc",
         source="incident_webhook",
-        status="pr_created",
+        status="fixed",
         message="Fixed it.",
         pr_url="https://github.com/org/repo/pull/1",
         repair_result=RepairResult(
             root_cause_summary="Fixed it.",
-            status="pr_created",
+            status="fixed",
             changed_files=["src/app.ts"],
             pr_url="https://github.com/org/repo/pull/1",
         ),
@@ -88,5 +88,6 @@ def test_feishu_card_contains_review_message() -> None:
     assert FeishuNotifier.REVIEW_MESSAGE in payload["card"]["header"]["title"]["content"]
     element_text = "\n".join(element["content"] for element in payload["card"]["elements"])
     assert "https://github.com/org/repo/pull/1" in element_text
-    assert "自动生成测试" in element_text
+    assert "自动生成测试" not in element_text
+    assert "处理结论" not in element_text
     assert "决策理由" not in element_text

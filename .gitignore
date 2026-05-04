@@ -1,7 +1,7 @@
 __pycache__/
 .pytest_cache/
 .pytest-tmp/
-.agentfix-pytest-tmp/
+.patchpilot-pytest-tmp/
 tmp-pytest/
 tmp-pytest*/
 .venv/
@@ -9,10 +9,9 @@ venv/
 build/
 dist/
 *.pyc
-.agentfix-artifacts/
-.agentfix-state/
-agentfix.local.yaml
+.patchpilot-artifacts/
+.patchpilot-state/
+patchpilot.local.yaml
 *.egg-info/
 .codex
 .vscode
-openspec
