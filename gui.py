@@ -370,8 +370,8 @@ class PatchPilotGUI(tk.Tk):
         self._add_secret(body, ("openai", "api_key"), "模型 / ARK API Key")
         self._add_entry(body, ("openai", "base_url"), "模型接口地址")
         self._add_entry(body, ("openai", "transport"), "模型调用方式")
-        self._add_entry(body, ("openai", "analysis_reasoning_effort"), "分析推理强度")
-        self._add_entry(body, ("openai", "patch_reasoning_effort"), "修复推理强度")
+        self._add_combo(body, ("openai", "analysis_reasoning_effort"), "分析推理强度", ["", "low", "medium", "high"])
+        self._add_combo(body, ("openai", "patch_reasoning_effort"), "修复推理强度", ["", "low", "medium", "high"])
         self._add_secret(body, ("github", "token"), "GitHub 访问令牌")
         self._add_entry(body, ("github", "api_base_url"), "GitHub API 地址")
         self._add_secret(body, ("feishu", "webhook_url"), "飞书机器人地址")
@@ -493,6 +493,15 @@ class PatchPilotGUI(tk.Tk):
         var = tk.StringVar()
         self.form_vars[path] = var
         self._row(parent, label, var)
+
+    def _add_combo(self, parent, path: tuple[str, ...], label: str, values: list[str]) -> None:
+        var = tk.StringVar()
+        self.form_vars[path] = var
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        combo = ttk.Combobox(row, textvariable=var, values=values, state="readonly")
+        combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def _add_path_entry(self, parent, path: tuple[str, ...], label: str, browse_type: str = "dir") -> None:
         var = tk.StringVar()
