@@ -1,12 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import subprocess
 from pathlib import Path
 from typing import Iterable
 
-from agentfix.config import GuardrailSettings
-from agentfix.models import CandidateFile, Incident, RepoContext, RepoMetadata, StackFrame
+from patchpilot.config import GuardrailSettings
+from patchpilot.models import CandidateFile, Incident, RepoContext, RepoMetadata, StackFrame
 
 
 DEPENDENCY_FILE_NAMES = {

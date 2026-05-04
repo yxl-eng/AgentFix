@@ -1,30 +1,30 @@
-# AgentFix 命令与 Webhook
+﻿# PatchPilot 命令与 Webhook
 
-## `agentfix doctor`
+## `patchpilot doctor`
 
 检查配置、依赖、凭据和 Agent 拓扑。
 
 ```powershell
-agentfix doctor
+patchpilot doctor
 ```
 
-## `agentfix analyze`
+## `patchpilot analyze`
 
 只做日志解析、代码上下文收集和 LLM 根因分析，不修改代码。
 
 ```powershell
-agentfix analyze `
+patchpilot analyze `
   --repo C:\path\to\target-repo `
   --log-file .\incident.log `
   --base-branch main
 ```
 
-## `agentfix run`
+## `patchpilot run`
 
-执行完整单次修复流程：分析、补丁、验证、可选 PR。
+执行完整单次修复流程：分析、补丁、验证、可选 PR。V5 会进入 Iterative Repair Loop，默认最多 3 轮，根据验证反馈继续修正补丁。
 
 ```powershell
-agentfix run `
+patchpilot run `
   --repo C:\path\to\target-repo `
   --log-file .\incident.log `
   --base-branch main
@@ -33,36 +33,36 @@ agentfix run `
 只修复和验证，不创建 PR：
 
 ```powershell
-agentfix run --repo C:\path\to\target-repo --log-file .\incident.log --no-pr
+patchpilot run --repo C:\path\to\target-repo --log-file .\incident.log --no-pr
 ```
 
-## `agentfix validate`
+## `patchpilot validate`
 
 验证已有改动，不调用 LLM。
 
 ```powershell
-agentfix validate --repo C:\path\to\target-repo --files src/app.ts
+patchpilot validate --repo C:\path\to\target-repo --files src/app.ts
 ```
 
 如果未传 `--files`，会读取目标仓库的 `git diff --name-only`。
 
-## `agentfix pr`
+## `patchpilot pr`
 
 基于已有 `repair-result.json` 创建 Draft PR。
 
 ```powershell
-agentfix pr `
+patchpilot pr `
   --repo C:\path\to\target-repo `
-  --report-file .agentfix-artifacts\20260427120000-demo\repair-result.json `
+  --report-file .patchpilot-artifacts\20260427120000-demo\repair-result.json `
   --base-branch main
 ```
 
-## `agentfix serve`
+## `patchpilot serve`
 
 启动常驻 Agent 服务。
 
 ```powershell
-agentfix serve --host 0.0.0.0 --port 8080 --watch
+patchpilot serve --host 0.0.0.0 --port 8080 --watch
 ```
 
 - `--host`：覆盖 `server.host`。
@@ -149,15 +149,16 @@ Invoke-RestMethod `
 5. 扫描 `service_log_file` 新增内容，确认同类错误没有再次出现
 6. 停止服务进程
 
-若没有可执行验证，修复结果会更偏向人工确认。
+若没有可执行验证，修复结果会更偏向人工处理报告。
 
 ## 输出状态
 
-- `pr_created`：修复通过验证并创建 Draft PR。
-- `validated`：修复通过验证，但没有创建 PR。
-- `needs_human_verification`：基础流程成功，但缺少足够服务级验证。
-- `needs_manual_intervention`：分析置信度不足、补丁失败或重试耗尽。
-- `failed`：Agent 服务处理事件时发生未恢复错误。
+- `fixed`：修复已验证通过；是否创建 PR 看 `pr_url` 字段。
+- `needs_human_verification`：语法/编译检查通过，但自动生成的回归测试样例没有通过，需要人工确认。
+- `needs_manual_intervention`：配置、环境、数据、外部依赖、信息不足、补丁越界或多轮修复失败。
+- `ignored`：Planner 判断为预期日志、噪声或无需处理的事件。
+
+旧记录中的 `pr_created`、`validated` 会在 GUI 和报告中展示为 `fixed`；`reported`、`needs_more_context` 会展示为 `needs_manual_intervention`。
 
 ## 修复记录
 

@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentfix"
+name = "patchpilot"
 version = "0.1.0"
 description = "Agent-based service auto-repair CLI for Python repositories"
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
 dev = ["pytest>=8.0.0,<9"]
 
 [project.scripts]
-agentfix = "agentfix.cli:main"
+patchpilot = "patchpilot.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -32,5 +32,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-q --basetemp=tmp-pytest"
+addopts = "-q"
 norecursedirs = ["tests/fixtures"]

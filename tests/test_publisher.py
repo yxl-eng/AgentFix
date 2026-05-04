@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 
-from agentfix.config import GitHubSettings
-from agentfix.models import AnalysisResult, AppliedPatch, Incident, RepairIntent, ValidationCommandResult, ValidationResult
-from agentfix.publisher import GitHubPublisher
+from patchpilot.config import GitHubSettings
+from patchpilot.models import AnalysisResult, AppliedPatch, Incident, RepairIntent, ValidationCommandResult, ValidationResult
+from patchpilot.publisher import GitHubPublisher
 
 
 def test_publisher_builds_branch_and_body() -> None:
@@ -45,7 +45,7 @@ def test_publisher_builds_branch_and_body() -> None:
     branch = publisher.build_branch_name(incident)
     body = publisher.build_pr_body(incident, analysis, applied, validation)
 
-    assert re.fullmatch(r"agentfix/inc-1001/attributeerror-\d{14}", branch)
+    assert re.fullmatch(r"patchpilot/inc-1001/attributeerror-\d{14}", branch)
     assert "## Error Summary" in body
     assert "`app/service.py`" in body
     assert "python -m py_compile app/service.py" in body

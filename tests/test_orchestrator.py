@@ -1,15 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from agentfix.config import AppConfig
-from agentfix.incident_ingest import IncidentIngestor
-from agentfix.models import AnalysisResult, FilePatch, PatchProposal, RepairIntent
-from agentfix.patch_engine import PatchEngine
-from agentfix.publisher import GitHubPublisher
-from agentfix.repair_orchestrator import RepairOrchestrator
-from agentfix.repo_context import RepoContextCollector
-from agentfix.services.analysis import AnalysisAgent
-from agentfix.services.patching import PatchAgent
-from agentfix.validator import Validator
+from patchpilot.config import AppConfig
+from patchpilot.incident_ingest import IncidentIngestor
+from patchpilot.models import AnalysisResult, FilePatch, PatchProposal, RepairIntent
+from patchpilot.patch_engine import PatchEngine
+from patchpilot.publisher import GitHubPublisher
+from patchpilot.repair_orchestrator import RepairOrchestrator
+from patchpilot.repo_context import RepoContextCollector
+from patchpilot.services.analysis import AnalysisAgent
+from patchpilot.services.patching import PatchAgent
+from patchpilot.validator import Validator
 from tests.helpers import StaticProvider
 
 
@@ -71,7 +71,8 @@ def test_orchestrator_runs_end_to_end_with_fake_provider(temp_repo, fixtures_roo
         publish=False,
     )
 
-    assert result.status == "validated"
+    assert result.status == "fixed"
     assert result.syntax_check is True
     assert result.changed_files == ["app/service.py"]
     assert any("pytest" in command for command in result.tests_run)
+    assert result.repair_iterations

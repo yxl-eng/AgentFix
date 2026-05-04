@@ -1,8 +1,8 @@
-# AgentFix V4 环境感知 Agent 使用指南
+﻿# PatchPilot V4 环境感知 Agent 使用指南
 
 ## 1. V4 做了什么
 
-AgentFix V4 把原来的固定自动修复流水线升级为“先分诊，再选择工具，最后修复或报告”的环境感知 Agent。
+PatchPilot V4 把原来的固定自动修复流水线升级为“先分诊，再选择工具，最后修复或报告”的环境感知 Agent。
 
 旧流程是：
 
@@ -19,10 +19,11 @@ V4 流程是：
 新增能力：
 
 - `Incident Planner`：先判断日志是否值得处理。
-- 三类主要结果：
+- 四类对外状态：
   - `ignored`：日志包含 error，但属于预期业务/客户端错误，不修复。
-  - `reported`：确认异常，但更像环境、配置、数据或外部依赖问题，不改代码，只写报告并通知。
-  - `repair_attempt`：确认像代码 Bug，继续自动生成测试、修代码、验证、创建 Draft PR。
+  - `needs_manual_intervention`：确认异常，但更像环境、配置、数据、外部依赖或多轮修复失败，不盲目改代码。
+  - `needs_human_verification`：代码补丁通过语法/编译检查，但自动生成的回归测试未通过，需要人工确认。
+  - `fixed`：确认像代码 Bug，已自动生成补丁、完成验证，并在条件满足时创建 Draft PR。
 - records 升级：每次事件都写 JSON 和 Markdown，包含分诊结论、证据、工具计划、根因类型、人工处理建议。
 - 桌面控制台：基于 `gui.py`，支持事故查看、配置编辑、目标服务管理和手动运行。
 - 订单履约运营服务：提供可交互页面，通过页面操作触发线上风格 traceback。
@@ -32,20 +33,20 @@ V4 流程是：
 推荐 Python 3.11。
 
 ```powershell
-conda activate agentfix311
+conda activate patchpilot311
 python -m pip install -e ".[dev]"
 ```
 
 检查环境：
 
 ```powershell
-agentfix doctor
+patchpilot doctor
 ```
 
-如果 `agentfix` 命令不可用，可以使用：
+如果 `patchpilot` 命令不可用，可以使用：
 
 ```powershell
-python -m agentfix doctor
+python -m patchpilot doctor
 ```
 
 需要的环境变量：
@@ -67,11 +68,11 @@ $env:FEISHU_WEBHOOK_SECRET="你的飞书机器人 Secret"
 默认读取：
 
 ```text
-agentfix.yaml
-agentfix.local.yaml
+patchpilot.yaml
+patchpilot.local.yaml
 ```
 
-`agentfix.local.yaml` 会覆盖 `agentfix.yaml`，适合放本机密钥、本地路径和真实 GitHub 仓库名。
+`patchpilot.local.yaml` 会覆盖 `patchpilot.yaml`，适合放本机密钥、本地路径和真实 GitHub 仓库名。
 
 V4 新增配置：
 
@@ -159,15 +160,15 @@ python gui.py
 保存配置时会写入：
 
 ```text
-agentfix.local.yaml
+patchpilot.local.yaml
 ```
 
-不会直接覆盖 `agentfix.yaml`。`server.host`、`server.port`、`server.state_path` 这类服务级配置保存后建议重启 AgentFix 才能完全生效。
+不会直接覆盖 `patchpilot.yaml`。`server.host`、`server.port`、`server.state_path` 这类服务级配置保存后建议重启 PatchPilot 才能完全生效。
 
-## 5. 启动 AgentFix 服务
+## 5. 启动 PatchPilot 服务
 
 ```powershell
-agentfix serve --host 127.0.0.1 --port 8080 --watch
+patchpilot serve --host 127.0.0.1 --port 8080 --watch
 ```
 
 健康检查：
@@ -207,21 +208,21 @@ http://127.0.0.1:8770/
 - 现在代码先释放库存，再判断已支付状态。
 - 旧订单缺少 `inventory_hold` 字段，所以抛出 `KeyError: 'inventory_hold'`。
 
-## 7. 触发 AgentFix
+## 7. 触发 PatchPilot
 
 ### 方式 A：watch 自动触发
 
-先启动 AgentFix：
+先启动 PatchPilot：
 
 ```powershell
-agentfix serve --host 127.0.0.1 --port 8080 --watch
+patchpilot serve --host 127.0.0.1 --port 8080 --watch
 ```
 
-再在订单履约运营台点击触发错误。AgentFix 会轮询 `logs/app.log`，发现新增 traceback 后自动处理。
+再在订单履约运营台点击触发错误。PatchPilot 会轮询 `logs/app.log`，发现新增 traceback 后自动处理。
 
 ### 方式 B：incident webhook 触发
 
-也可以把日志主动发给 AgentFix：
+也可以把日志主动发给 PatchPilot：
 
 ```powershell
 $body = @{
@@ -254,16 +255,16 @@ records/<incident_id>.md
 
 成功修复时会看到：
 
-- `status: pr_created`
+- `status: fixed`
 - `disposition: repair_attempt`
 - `root_cause_type: code`
 - `tool_plan` 包含 `Read Code`、`Generate Regression Test`、`Run Test`、`Git Commit`
 - GitHub Draft PR 链接
-- 飞书卡片：“我发现了一个 Bug 并已为您修复，请 Review”
+- 飞书卡片：“PatchPilot 已修复一个 Bug，请 Review”
 
 只报告时会看到：
 
-- `status: reported`
+- `status: needs_manual_intervention`
 - `disposition: report_only`
 - `human_action_required: true`
 - `human_resolution_steps` 给出人工处理建议
@@ -282,7 +283,7 @@ records/<incident_id>.md
 
 常见原因：
 
-- Planner 判断为 `reported` 或 `ignored`。
+- Planner 判断为需要人工处理或已忽略。
 - 验证失败。
 - GitHub Token 缺失。
 - 目标仓库没有 remote。

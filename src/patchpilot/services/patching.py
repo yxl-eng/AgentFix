@@ -1,15 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from textwrap import dedent
 
-from agentfix.config import AppConfig
-from agentfix.models import AnalysisResult, Incident, PatchProposal, RepoContext
-from agentfix.providers.base import StructuredModelProvider
+from patchpilot.config import AppConfig
+from patchpilot.models import AnalysisResult, Incident, PatchProposal, RepoContext
+from patchpilot.providers.base import StructuredModelProvider
 
 
 PATCH_INSTRUCTIONS = dedent(
     """
-    你是 AgentFix 的补丁生成专家，负责为多语言 Web 服务生成最小安全修复。
+    你是 PatchPilot 的补丁生成专家，负责为多语言 Web 服务生成最小安全修复。
     只返回结构化结果，并遵守这些规则：
     - 最多只编辑明确允许的文件。
     - 尽量保留无关代码和原有格式。

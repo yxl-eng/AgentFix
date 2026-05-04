@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -8,31 +8,32 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from agentfix.config import AppConfig, GuardrailSettings, TargetSettings
-from agentfix.generated_tests import (
+from patchpilot.config import AppConfig, GuardrailSettings, TargetSettings
+from patchpilot.generated_tests import (
     FrameworkDetector,
     GeneratedTestAgent,
     GeneratedTestRunner,
     GeneratedTestValidator,
 )
-from agentfix.incident_ingest import IncidentIngestor
-from agentfix.localization import disposition_label, root_cause_label, status_label
-from agentfix.models import (
+from patchpilot.incident_ingest import IncidentIngestor
+from patchpilot.localization import disposition_label, root_cause_label, status_label
+from patchpilot.models import (
     AppliedPatch,
     FilePatch,
     GeneratedTestProposal,
     GeneratedTestResult,
     Incident,
     PatchProposal,
+    RepairIterationRecord,
     RepairResult,
     ValidationResult,
 )
-from agentfix.patch_engine import PatchEngine, PatchGuardrailError
-from agentfix.publisher import GitHubPublisher, PublisherError
-from agentfix.repo_context import RepoContextCollector
-from agentfix.services.analysis import AnalysisAgent
-from agentfix.services.patching import PatchAgent
-from agentfix.validator import Validator
+from patchpilot.patch_engine import PatchEngine, PatchGuardrailError
+from patchpilot.publisher import GitHubPublisher, PublisherError
+from patchpilot.repo_context import RepoContextCollector
+from patchpilot.services.analysis import AnalysisAgent
+from patchpilot.services.patching import PatchAgent
+from patchpilot.validator import Validator
 
 
 class RepairOrchestrator:
@@ -144,10 +145,19 @@ class RepairOrchestrator:
         feedback: list[str] = []
         last_validation: ValidationResult | None = None
         last_failure: str | None = None
+        iterations: list[RepairIterationRecord] = []
+        generated_test_failed_after_patch = False
 
         for attempt in range(1, self.config.runtime.max_repair_attempts + 1):
             with self._temporary_workspace(source_repo) as workspace:
                 attempt_context = self.collector.collect(workspace, incident, base_branch)
+                iteration = RepairIterationRecord(
+                    attempt=attempt,
+                    hypothesis=analysis.root_cause_summary,
+                    code_context=[item.relative_path for item in attempt_context.candidate_files],
+                    next_feedback=list(feedback),
+                )
+                iterations.append(iteration)
                 try:
                     generated_result, generated_patch = self._prepare_generated_test(
                         workspace=workspace,
@@ -168,10 +178,15 @@ class RepairOrchestrator:
                         )
                         feedback = validation.failure_summary or ["自动生成的回归测试未能完成有效验证。"]
                         last_failure = "; ".join(feedback)
+                        iteration.generated_test_summary = self._summarize_generated_test(generated_result)
+                        iteration.validation_feedback = list(feedback)
+                        iteration.next_feedback = list(feedback)
+                        iteration.status = "generated_test_not_reproducible"
                         continue
 
                     repair_analysis = self._analysis_for_repair_patch(analysis, target_config)
                     proposal = self.patch_agent.propose(incident, repair_analysis, attempt_context, feedback=feedback)
+                    iteration.patch_summary = proposal.summary
                     self._write_json(
                         artifact_dir / f"attempt-{attempt}-proposal.json",
                         proposal.model_dump(mode="json"),
@@ -203,7 +218,10 @@ class RepairOrchestrator:
                         generated_result.commands.append(post_fix_result)
                         generated_result.postfix_passed = post_fix_result.returncode == 0
                         if not generated_result.postfix_passed:
-                            if target_config is not None and target_config.generated_tests.fallback_to_v2_on_failure:
+                            if (
+                                target_config is not None
+                                and target_config.generated_tests.should_continue_existing_validation
+                            ):
                                 generated_result.fallback_reason = self._generated_test_postfix_fallback_reason(
                                     post_fix_result
                                 )
@@ -213,6 +231,7 @@ class RepairOrchestrator:
                                     generated_result.model_dump(mode="json"),
                                 )
                             else:
+                                generated_test_failed_after_patch = True
                                 validation = self._generated_test_failure_validation(
                                     generated_result,
                                     message="自动生成的回归测试在应用修复补丁后仍然失败。",
@@ -224,12 +243,17 @@ class RepairOrchestrator:
                                 )
                                 feedback = validation.failure_summary or ["自动生成的回归测试在修复后仍然失败。"]
                                 last_failure = "; ".join(feedback)
+                                iteration.generated_test_summary = self._summarize_generated_test(generated_result)
+                                iteration.validation_feedback = list(feedback)
+                                iteration.next_feedback = list(feedback)
+                                iteration.status = "generated_test_failed_after_patch"
                                 continue
                         if generated_result.postfix_passed and (
                             target_config is None or target_config.generated_tests.commit_when_stable
                         ):
                             generated_result.committed = True
                             applied_patch = self._combine_patches(applied_patch, generated_patch)
+                    iteration.generated_test_summary = self._summarize_generated_test(generated_result)
 
                     self._write_text(artifact_dir / f"attempt-{attempt}.patch", applied_patch.diff_text)
                     validation = self.validator.validate(
@@ -244,6 +268,9 @@ class RepairOrchestrator:
                     if generated_result is not None and generated_result.commands:
                         validation.commands = generated_result.commands + validation.commands
                     last_validation = validation
+                    iteration.validation_feedback = validation.failure_summary or (
+                        ["验证通过"] if validation.is_success else ["验证未通过"]
+                    )
                     self._write_json(
                         artifact_dir / f"attempt-{attempt}-validation.json",
                         validation.model_dump(mode="json"),
@@ -251,17 +278,26 @@ class RepairOrchestrator:
                 except PatchGuardrailError as exc:
                     feedback = [str(exc)]
                     last_failure = str(exc)
+                    iteration.validation_feedback = list(feedback)
+                    iteration.next_feedback = list(feedback)
+                    iteration.status = "guardrail_failed"
                     continue
                 except Exception as exc:
                     feedback = [str(exc)]
                     last_failure = str(exc)
+                    iteration.validation_feedback = list(feedback)
+                    iteration.next_feedback = list(feedback)
+                    iteration.status = "failed"
                     continue
 
                 if not validation.is_success:
                     feedback = validation.failure_summary or ["验证未通过。"]
                     last_failure = "; ".join(feedback)
+                    iteration.next_feedback = list(feedback)
+                    iteration.status = "validation_failed"
                     continue
 
+                iteration.status = "validated"
                 pr_result = None
                 if publish:
                     try:
@@ -288,28 +324,35 @@ class RepairOrchestrator:
                     syntax_check=validation.syntax_check,
                     tests_run=[item.command for item in validation.commands],
                     pr_url=pr_result.pr_url if pr_result else None,
-                    status="pr_created" if pr_result else "validated",
                     analysis=analysis,
                     validation=validation,
                     generated_test=validation.generated_test,
                     artifact_dir=str(artifact_dir),
                     branch=pr_result.branch if pr_result else None,
                     failure_reason=last_failure,
+                    status="fixed",
+                    repair_iterations=iterations,
                 )
                 self._write_result_bundle(artifact_dir, result)
                 return result
 
+        final_status = (
+            "needs_human_verification"
+            if generated_test_failed_after_patch and last_validation and last_validation.syntax_check
+            else "needs_manual_intervention"
+        )
         result = RepairResult(
             root_cause_summary=analysis.root_cause_summary,
             diff_summary="没有生成通过验证的补丁。",
             syntax_check=bool(last_validation and last_validation.syntax_check),
             tests_run=[item.command for item in last_validation.commands] if last_validation else [],
-            status="needs_manual_intervention",
+            status=final_status,
             analysis=analysis,
             validation=last_validation,
             generated_test=last_validation.generated_test if last_validation else None,
             artifact_dir=str(artifact_dir),
             failure_reason=last_failure or "多次生成补丁和验证都未成功。",
+            repair_iterations=iterations,
         )
         self._write_result_bundle(artifact_dir, result)
         return result
@@ -408,7 +451,7 @@ class RepairOrchestrator:
         result.prefix_failed = self.generated_test_validator.is_prefix_failure_related(prefix_result, incident)
         if not result.prefix_failed:
             self._restore_generated_test(original_path, original_exists, original_content)
-            if target_config.generated_tests.fallback_to_v2_on_failure:
+            if target_config.generated_tests.should_continue_existing_validation:
                 result.fallback_reason = self._generated_test_fallback_reason(prefix_result)
                 return result, None
             return result, None
@@ -425,7 +468,11 @@ class RepairOrchestrator:
             return False
         if result.fallback_reason is not None:
             return False
-        return result.attempted and result.prefix_failed is not True and not target_config.generated_tests.fallback_to_v2_on_failure
+        return (
+            result.attempted
+            and result.prefix_failed is not True
+            and target_config.generated_tests.should_require_human_verification
+        )
 
     def _generated_test_failure_validation(
         self,
@@ -549,7 +596,7 @@ class RepairOrchestrator:
     @contextmanager
     def _temporary_workspace(self, source_repo: Path) -> Path:
         """创建临时工作目录，使用完毕后自动清理"""
-        target = Path(tempfile.mkdtemp(prefix="agentfix-"))
+        target = Path(tempfile.mkdtemp(prefix="patchpilot-"))
         destination = target / source_repo.name
         try:
             shutil.copytree(
@@ -590,8 +637,9 @@ class RepairOrchestrator:
                 generated_test_status = "已尝试但未采纳"
         repair_approach = self._render_repair_approach(result)
         generated_test_details = self._render_generated_test_details(result.generated_test)
+        iteration_details = self._render_iteration_details(result)
         return (
-            "# AgentFix 修复报告\n\n"
+            "# PatchPilot 修复报告\n\n"
             f"- 状态：{status_label(result.status)}（`{result.status}`）\n"
             f"- 处理结论：{disposition_label(result.disposition or 'repair_attempt')}\n"
             f"- 根因类型：{root_cause_label(result.root_cause_type or 'unknown')}\n"
@@ -607,6 +655,8 @@ class RepairOrchestrator:
             "## 自动生成回归测试\n"
             f"- 状态：{generated_test_status}\n"
             f"{generated_test_details}\n\n"
+            "## 迭代修复过程\n"
+            f"{iteration_details}\n\n"
             "## 验证命令\n"
             f"{validation_lines}\n\n"
             "## Diff 摘要\n"
@@ -633,6 +683,41 @@ class RepairOrchestrator:
         if result.failure_reason:
             return f"- 本次没有产生可提交补丁，原因：{result.failure_reason}"
         return "- 无"
+
+    def _summarize_generated_test(self, generated_test: GeneratedTestResult | None) -> str:
+        if generated_test is None or not generated_test.attempted:
+            return "未尝试生成回归测试"
+        if generated_test.is_stable and generated_test.committed:
+            return f"已生成并提交 {generated_test.test_path}"
+        if generated_test.postfix_passed is False:
+            return "生成的回归测试在修复后仍未通过"
+        if generated_test.fallback_reason:
+            return f"未采纳生成测试：{generated_test.fallback_reason}"
+        if generated_test.test_path:
+            return f"已生成候选测试 {generated_test.test_path}"
+        return "生成测试未形成可用文件"
+
+    def _render_iteration_details(self, result: RepairResult) -> str:
+        if not result.repair_iterations:
+            return "- 无"
+        lines: list[str] = []
+        for item in result.repair_iterations:
+            context = ", ".join(item.code_context[:6]) if item.code_context else "无"
+            feedback = "；".join(item.validation_feedback) if item.validation_feedback else "无"
+            next_feedback = "；".join(item.next_feedback) if item.next_feedback else "无"
+            lines.extend(
+                [
+                    f"### 第 {item.attempt} 轮：{item.status}",
+                    f"- 当前假设：{item.hypothesis or '无'}",
+                    f"- 读取代码上下文：{context}",
+                    f"- 生成测试：{item.generated_test_summary or '无'}",
+                    f"- 补丁摘要：{item.patch_summary or '无'}",
+                    f"- 验证反馈：{feedback}",
+                    f"- 下一轮反馈：{next_feedback}",
+                    "",
+                ]
+            )
+        return "\n".join(lines).strip()
 
     def _render_generated_test_details(self, generated_test: GeneratedTestResult | None) -> str:
         if generated_test is None or not generated_test.attempted:

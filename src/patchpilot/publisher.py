@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -23,8 +23,8 @@ except ImportError:  # pragma: no cover - fallback for minimal local doctor/vali
     def wait_exponential(*args, **kwargs):
         return None
 
-from agentfix.config import GitHubSettings
-from agentfix.models import AnalysisResult, AppliedPatch, Incident, PullRequestResult, ValidationResult
+from patchpilot.config import GitHubSettings
+from patchpilot.models import AnalysisResult, AppliedPatch, Incident, PullRequestResult, ValidationResult
 
 
 class PublisherError(RuntimeError):
@@ -88,14 +88,14 @@ class GitHubPublisher:
         raw_id = incident.incident_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         short_exception = self._slugify(incident.exception_type or "unknown-error")
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        return f"agentfix/{self._slugify(raw_id)}/{short_exception}-{timestamp}"
+        return f"patchpilot/{self._slugify(raw_id)}/{short_exception}-{timestamp}"
 
     def build_commit_message(self, incident: Incident) -> str:
         incident_id = incident.incident_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         return f"fix: 修复 incident {incident_id} 中的 {incident.exception_type}"
 
     def build_pr_title(self, incident: Incident, analysis: AnalysisResult) -> str:
-        return f"[AgentFix] 自动修复 {incident.exception_type}: {analysis.root_cause_summary[:72]}"
+        return f"[PatchPilot] 自动修复 {incident.exception_type}: {analysis.root_cause_summary[:72]}"
 
     def build_pr_body(
         self,

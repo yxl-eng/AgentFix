@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from agentfix.providers.base import StructuredModelProvider, T
+from patchpilot.providers.base import StructuredModelProvider, T
 
 
 class StaticProvider(StructuredModelProvider):

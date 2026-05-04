@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import subprocess
 import time
@@ -6,8 +6,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from agentfix.config import TargetSettings, ValidationSettings, VerificationRequestSettings
-from agentfix.models import Incident, RepoContext, ValidationCommandResult, ValidationResult
+from patchpilot.config import TargetSettings, ValidationSettings, VerificationRequestSettings
+from patchpilot.models import Incident, RepoContext, ValidationCommandResult, ValidationResult
 
 
 class Validator:

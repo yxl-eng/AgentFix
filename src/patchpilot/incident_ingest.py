@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from pathlib import Path
 
-from agentfix.models import ExpectedOutcome, Incident, RequestContext, StackFrame
+from patchpilot.models import ExpectedOutcome, Incident, RequestContext, StackFrame
 
 
 FRAME_RE = re.compile(r'^\s*File "(?P<path>.+?)", line (?P<line>\d+), in (?P<func>.+?)\s*$')

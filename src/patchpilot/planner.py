@@ -1,12 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
 import subprocess
 from pathlib import Path
 
-from agentfix.config import AppConfig, TargetSettings
-from agentfix.models import PlannerDecision, RepairEvent
+from patchpilot.config import AppConfig, TargetSettings
+from patchpilot.models import PlannerDecision, RepairEvent
 
 
 class IncidentPlanner:
@@ -111,13 +111,13 @@ class IncidentPlanner:
                 risk_level="high",
                 confidence=0.95,
                 summary="配置的目标仓库路径不存在。",
-                reason="目标仓库不在本机，AgentFix 无法读取代码或生成补丁。",
+                reason="目标仓库不在本机，PatchPilot 无法读取代码或生成补丁。",
                 evidence=[f"repo_path={repo_path}", *env_evidence],
                 tool_plan=["Read Log", "Inspect Config", "Record Repair", "Notify Feishu"],
                 human_action_required=True,
                 human_steps=[
                     "先把目标服务仓库 clone 到配置的 repo_path。",
-                    "检查 agentfix.local.yaml 中的 target.repo_path 是否指向这个本地仓库。",
+                    "检查 patchpilot.local.yaml 中的 target.repo_path 是否指向这个本地仓库。",
                     "路径可用后重新发送 incident 或重新触发日志 watch。",
                 ],
             )
@@ -216,7 +216,7 @@ class IncidentPlanner:
                 risk_level="low",
                 confidence=0.65,
                 summary="事件提到了 error，但缺少足够诊断证据。",
-                reason="在修改代码前，AgentFix 需要 traceback、失败请求或运行时上下文。",
+                reason="在修改代码前，PatchPilot 需要 traceback、失败请求或运行时上下文。",
                 evidence=[self._first_relevant_line(stripped), *env_evidence],
                 tool_plan=["Read Log", "Inspect Config", "Record Repair", "Notify Feishu"],
                 human_action_required=True,
