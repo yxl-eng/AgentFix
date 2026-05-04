@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from setuptools import find_packages, setup
 
 
 setup(
-    name="agentfix",
+    name="patchpilot",
     version="0.1.0",
     description="Agent-based service auto-repair CLI for web service repositories",
     package_dir={"": "src"},
@@ -17,5 +17,5 @@ setup(
         "tenacity>=8.0.0,<9",
     ],
     extras_require={"dev": ["pytest>=8.0.0,<9"]},
-    entry_points={"console_scripts": ["agentfix=agentfix.cli:main"]},
+    entry_points={"console_scripts": ["patchpilot=patchpilot.cli:main"]},
 )

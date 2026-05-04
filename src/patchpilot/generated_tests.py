@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 from textwrap import dedent
 
-from agentfix.config import AppConfig, TargetSettings, ValidationSettings
-from agentfix.models import (
+from patchpilot.config import AppConfig, TargetSettings, ValidationSettings
+from patchpilot.models import (
     AnalysisResult,
     GeneratedTestProposal,
     Incident,
@@ -17,12 +17,12 @@ from agentfix.models import (
     TestFrameworkInfo,
     ValidationCommandResult,
 )
-from agentfix.providers.base import StructuredModelProvider
+from patchpilot.providers.base import StructuredModelProvider
 
 
 GENERATED_TEST_INSTRUCTIONS = dedent(
     """
-    你是 AgentFix 的回归测试生成专家，负责为自动修复生成聚焦、可靠的测试。
+    你是 PatchPilot 的回归测试生成专家，负责为自动修复生成聚焦、可靠的测试。
     只返回结构化结果，并遵守这些规则：
     - 最多创建一个测试文件。
     - 优先只创建一个聚焦本次 incident 的测试函数，不要顺手添加无关边界测试。
@@ -217,7 +217,7 @@ class GeneratedTestAgent:
 
             TASK
             生成一个回归测试文件：修复前应该失败，修复后应该通过。
-            优先放在现有 tests 目录下。Python pytest 优先使用 tests/test_agentfix_<topic>.py。
+            优先放在现有 tests 目录下。Python pytest 优先使用 tests/test_patchpilot_<topic>.py。
             Python unittest 请在 test_*.py 文件中创建 unittest.TestCase 类。
             测试只覆盖本次 incident 的核心行为，不要添加额外的泛化场景。
             如果是 Web API 测试，请优先断言 expected_outcome、HTTP 状态码和公开错误文案；
@@ -353,7 +353,7 @@ class GeneratedTestRunner:
     def _java_test_name(self, proposal: GeneratedTestProposal) -> str:
         if proposal.test_name:
             return proposal.test_name
-        return Path(proposal.test_path or "AgentFixGeneratedTest.java").stem
+        return Path(proposal.test_path or "PatchPilotGeneratedTest.java").stem
 
 
 class GeneratedTestValidator:

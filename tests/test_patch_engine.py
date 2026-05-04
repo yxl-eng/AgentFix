@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pytest
 
-from agentfix.config import GuardrailSettings
-from agentfix.models import FilePatch, PatchProposal
-from agentfix.patch_engine import PatchEngine, PatchGuardrailError
+from patchpilot.config import GuardrailSettings
+from patchpilot.models import FilePatch, PatchProposal
+from patchpilot.patch_engine import PatchEngine, PatchGuardrailError
 
 
 def test_patch_engine_applies_minimal_patch(temp_repo) -> None:

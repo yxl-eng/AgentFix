@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import subprocess
@@ -13,21 +13,36 @@ import tkinter as tk
 from tkinter import ttk
 
 import yaml
-import pystray
-from PIL import Image, ImageDraw
-from win10toast import ToastNotifier
 import os
+
+try:
+    import pystray
+except ImportError:  # 托盘能力是可选功能，缺失时不影响 GUI 启动。
+    pystray = None
+
+try:
+    from PIL import Image, ImageDraw
+except ImportError:  # Pillow 只用于生成托盘图标。
+    Image = None
+    ImageDraw = None
+
+try:
+    from win10toast import ToastNotifier
+except Exception:  # win10toast 依赖 pkg_resources，缺失时禁用桌面通知。
+    ToastNotifier = None
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agentfix.localization import disposition_label, risk_label, root_cause_label, status_label
+from patchpilot.localization import disposition_label, public_status, risk_label, root_cause_label, status_label
 
 
-APP_TITLE = "AgentFix Console"
-BASE_CONFIG = Path("agentfix.yaml")
-LOCAL_CONFIG = Path("agentfix.local.yaml")
+APP_TITLE = "PatchPilot 桌面控制台"
+BASE_CONFIG = Path("patchpilot.yaml")
+LOCAL_CONFIG = Path("patchpilot.local.yaml")
+LEGACY_BASE_CONFIG = Path("agentfix.yaml")
+LEGACY_LOCAL_CONFIG = Path("agentfix.local.yaml")
 
 
 def load_yaml(path: Path) -> dict:
@@ -103,7 +118,7 @@ class ScrollFrame(ttk.Frame):
         return False
 
 
-class AgentFixGUI(tk.Tk):
+class PatchPilotGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_TITLE)
@@ -129,7 +144,7 @@ class AgentFixGUI(tk.Tk):
         self.agent_process = None
 
         # Tray and Toast setup
-        self.toaster = ToastNotifier()
+        self.toaster = ToastNotifier() if ToastNotifier is not None else None
         self.icon = None
         self.protocol('WM_DELETE_WINDOW', self.hide_window)
 
@@ -173,7 +188,7 @@ class AgentFixGUI(tk.Tk):
 
         brand = ttk.Frame(self.sidebar, style="Sidebar.TFrame")
         brand.pack(fill=tk.X, padx=22, pady=(24, 18))
-        ttk.Label(brand, text="AgentFix", style="SidebarTitle.TLabel").pack(anchor=tk.W)
+        ttk.Label(brand, text="PatchPilot", style="SidebarTitle.TLabel").pack(anchor=tk.W)
         ttk.Label(brand, text="环境感知自动修复平台", style="SidebarSub.TLabel").pack(anchor=tk.W, pady=(4, 0))
 
         self.nav_buttons: dict[str, tk.Button] = {}
@@ -244,7 +259,7 @@ class AgentFixGUI(tk.Tk):
 
     def _build_dashboard_page(self) -> None:
         page = self.pages["dashboard"]
-        header = self.make_header(page, "总览", "查看 AgentFix 当前配置风险、修复成果和最近事故")
+        header = self.make_header(page, "总览", "查看 PatchPilot 当前配置风险、修复成果和最近事故")
         ttk.Button(header, text="刷新", style="Primary.TButton", command=self.refresh_all).pack(side=tk.RIGHT)
 
         metrics = ttk.Frame(page)
@@ -252,8 +267,9 @@ class AgentFixGUI(tk.Tk):
         self.metric_labels: dict[str, tk.Label] = {}
         for key, label in [
             ("total", "总事件"),
-            ("fixed", "已修复 PR"),
-            ("reported", "只报告"),
+            ("fixed", "已修复"),
+            ("needs_human_verification", "需人工验证"),
+            ("needs_manual_intervention", "需人工处理"),
             ("ignored", "已忽略"),
         ]:
             card = tk.Frame(metrics, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef")
@@ -297,7 +313,7 @@ class AgentFixGUI(tk.Tk):
         ttk.Combobox(
             filters,
             textvariable=self.incident_status,
-            values=["全部", "pr_created", "validated", "reported", "ignored", "needs_more_context", "needs_manual_intervention"],
+            values=["全部", "fixed", "needs_human_verification", "needs_manual_intervention", "ignored"],
             width=22,
             state="readonly",
         ).pack(side=tk.LEFT, padx=8)
@@ -391,7 +407,7 @@ class AgentFixGUI(tk.Tk):
 
     def _build_targets_page(self) -> None:
         page = self.pages["targets"]
-        header = self.make_header(page, "目标服务管理", "配置被 AgentFix 监控和自动修复的本地服务仓库")
+        header = self.make_header(page, "目标服务管理", "配置被 PatchPilot 监控和自动修复的本地服务仓库")
         ttk.Button(header, text="保存目标服务", style="Primary.TButton", command=self.save_current_target).pack(side=tk.RIGHT)
         ttk.Button(header, text="新增目标服务", command=self.add_target).pack(side=tk.RIGHT, padx=(0, 8))
 
@@ -426,12 +442,20 @@ class AgentFixGUI(tk.Tk):
         self._target_entry(form, "generated_tests.max_files", "生成测试最大文件数")
         self._target_check(form, "generated_tests.require_prefix_failure", "要求修复前失败")
         self._target_check(form, "generated_tests.commit_when_stable", "稳定后提交生成测试")
-        self._target_check(form, "generated_tests.fallback_to_v2_on_failure", "生成测试失败时继续既有验证")
+        self._target_combo(
+            form,
+            "generated_tests.failure_policy",
+            "生成测试失败策略",
+            [
+                "continue_existing_validation",
+                "needs_human_verification",
+            ],
+        )
         self.refresh_target_selector()
 
     def _build_system_page(self) -> None:
         page = self.pages["system"]
-        header = self.make_header(page, "系统状态 (Doctor)", "查看 AgentFix 运行环境、依赖状态及凭据校验")
+        header = self.make_header(page, "系统状态 (Doctor)", "查看 PatchPilot 运行环境、依赖状态及凭据校验")
         ttk.Button(header, text="执行自检 (Run Doctor)", style="Primary.TButton", command=self.run_doctor).pack(side=tk.RIGHT)
         
         scroll = ScrollFrame(page)
@@ -444,8 +468,8 @@ class AgentFixGUI(tk.Tk):
     def run_doctor(self) -> None:
         self.show_page("system")
         self.doctor_output.delete("1.0", tk.END)
-        self.doctor_output.insert(tk.END, "正在运行 AgentFix Doctor 自检...\n\n")
-        command = [sys.executable, "-m", "agentfix", "doctor"]
+        self.doctor_output.insert(tk.END, "正在运行 PatchPilot Doctor 自检...\n\n")
+        command = [sys.executable, "-m", "patchpilot", "doctor"]
         
         def worker() -> None:
             process = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -457,7 +481,7 @@ class AgentFixGUI(tk.Tk):
 
     def _build_manual_page(self) -> None:
         page = self.pages["manual"]
-        self.make_header(page, "手动运行", "直接选择本地仓库和日志文件，触发一次 AgentFix 修复")
+        self.make_header(page, "手动运行", "直接选择本地仓库和日志文件，触发一次 PatchPilot 修复")
         card = self.make_card(page, "运行参数")
         
         # Add background service toggle
@@ -574,6 +598,15 @@ class AgentFixGUI(tk.Tk):
         self.target_vars[key] = var
         self._make_check(parent, var, label).pack(anchor=tk.W, padx=16, pady=6)
 
+    def _target_combo(self, parent, key: str, label: str, values: list[str]) -> None:
+        var = tk.StringVar()
+        self.target_vars[key] = var
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        combo = ttk.Combobox(row, textvariable=var, values=values, state="readonly")
+        combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
     def _make_check(self, parent, variable: tk.BooleanVar, label: str) -> tk.Button:
         button = tk.Button(
             parent,
@@ -592,9 +625,9 @@ class AgentFixGUI(tk.Tk):
 
         def refresh() -> None:
             if variable.get():
-                button.configure(text=f"☑  {label} (已开启)", bg="#edf3ff", fg="#3370ff", highlightbackground="#3370ff")
+                button.configure(text=f"{label}：已开启", bg="#edf3ff", fg="#3370ff", highlightbackground="#3370ff")
             else:
-                button.configure(text=f"☐  {label} (未开启)", bg="#ffffff", fg="#646a73", highlightbackground="#e5e8ef")
+                button.configure(text=f"{label}：未开启", bg="#ffffff", fg="#646a73", highlightbackground="#e5e8ef")
 
         def toggle() -> None:
             variable.set(not variable.get())
@@ -620,8 +653,10 @@ class AgentFixGUI(tk.Tk):
             button.configure(text="预览")
 
     def load_config(self) -> None:
-        self.base_config = load_yaml(BASE_CONFIG)
-        self.local_config = load_yaml(LOCAL_CONFIG)
+        base_path = BASE_CONFIG if BASE_CONFIG.exists() else LEGACY_BASE_CONFIG
+        local_path = LOCAL_CONFIG if LOCAL_CONFIG.exists() else LEGACY_LOCAL_CONFIG
+        self.base_config = load_yaml(base_path)
+        self.local_config = load_yaml(local_path)
         self.config_data = deep_merge(self.base_config, self.local_config)
 
     def save_local_config(self) -> None:
@@ -651,9 +686,22 @@ class AgentFixGUI(tk.Tk):
 
     def render_dashboard(self) -> None:
         self.metric_labels["total"].configure(text=str(len(self.records)))
-        self.metric_labels["fixed"].configure(text=str(sum(1 for item in self.records if item.get("status") == "pr_created")))
-        self.metric_labels["reported"].configure(text=str(sum(1 for item in self.records if item.get("status") == "reported")))
-        self.metric_labels["ignored"].configure(text=str(sum(1 for item in self.records if item.get("status") == "ignored")))
+        self.metric_labels["fixed"].configure(
+            text=str(sum(1 for item in self.records if public_status(item.get("status")) == "fixed"))
+        )
+        self.metric_labels["needs_human_verification"].configure(
+            text=str(
+                sum(1 for item in self.records if public_status(item.get("status")) == "needs_human_verification")
+            )
+        )
+        self.metric_labels["needs_manual_intervention"].configure(
+            text=str(
+                sum(1 for item in self.records if public_status(item.get("status")) == "needs_manual_intervention")
+            )
+        )
+        self.metric_labels["ignored"].configure(
+            text=str(sum(1 for item in self.records if public_status(item.get("status")) == "ignored"))
+        )
         for row in self.dashboard_tree.get_children():
             self.dashboard_tree.delete(row)
         for item in self.records[:12]:
@@ -665,7 +713,7 @@ class AgentFixGUI(tk.Tk):
         for row in self.incidents_tree.get_children():
             self.incidents_tree.delete(row)
         for item in self.records:
-            if status_filter != "全部" and item.get("status") != status_filter:
+            if status_filter != "全部" and public_status(item.get("status")) != status_filter:
                 continue
             searchable = json.dumps(item, ensure_ascii=False).lower()
             if query and query not in searchable:
@@ -827,7 +875,7 @@ class AgentFixGUI(tk.Tk):
         except ValueError as exc:
             messagebox.showerror("保存失败", f"数字字段格式错误：{exc}")
             return
-        messagebox.showinfo("保存成功", "配置已写入 agentfix.local.yaml。服务 host/port 等改动重启后完全生效。")
+        messagebox.showinfo("保存成功", "配置已写入 patchpilot.local.yaml。服务 host/port 等改动重启后完全生效。")
 
     def refresh_target_selector(self) -> None:
         if not hasattr(self, "target_selector"):
@@ -848,6 +896,9 @@ class AgentFixGUI(tk.Tk):
                 continue
             if key.startswith("generated_tests."):
                 value = get_nested(target, tuple(key.split(".")), False)
+                if key == "generated_tests.failure_policy" and not value:
+                    legacy = get_nested(target, ("generated_tests", "fallback_to_v2_on_failure"), True)
+                    value = "continue_existing_validation" if legacy else "needs_human_verification"
                 if isinstance(widget, tk.BooleanVar):
                     widget.set(bool(value))
                 else:
@@ -898,7 +949,8 @@ class AgentFixGUI(tk.Tk):
                 "max_files": generated_max_files,
                 "require_prefix_failure": self.target_vars["generated_tests.require_prefix_failure"].get(),
                 "commit_when_stable": self.target_vars["generated_tests.commit_when_stable"].get(),
-                "fallback_to_v2_on_failure": self.target_vars["generated_tests.fallback_to_v2_on_failure"].get(),
+                "failure_policy": self.target_vars["generated_tests.failure_policy"].get()
+                or "continue_existing_validation",
             },
         }
         self.config_data.setdefault("targets", {})
@@ -908,7 +960,7 @@ class AgentFixGUI(tk.Tk):
         self.current_target_name.set(name)
         self.save_local_config()
         self.refresh_target_selector()
-        messagebox.showinfo("保存成功", "目标服务配置已写入 agentfix.local.yaml。")
+        messagebox.showinfo("保存成功", "目标服务配置已写入 patchpilot.local.yaml。")
 
     def add_target(self) -> None:
         self.config_data.setdefault("targets", {})
@@ -930,7 +982,7 @@ class AgentFixGUI(tk.Tk):
                 "max_files": 1,
                 "require_prefix_failure": True,
                 "commit_when_stable": True,
-                "fallback_to_v2_on_failure": True,
+                "failure_policy": "continue_existing_validation",
             },
         }
         self.current_target_name.set(name)
@@ -970,7 +1022,7 @@ class AgentFixGUI(tk.Tk):
         command = [
             sys.executable,
             "-m",
-            "agentfix",
+            "patchpilot",
             "run",
             "--repo",
             repo,
@@ -1004,6 +1056,8 @@ class AgentFixGUI(tk.Tk):
     # ================= Tray and Toast Methods =================
 
     def create_image(self):
+        if Image is None or ImageDraw is None:
+            return None
         image = Image.new('RGB', (64, 64), color=(44, 62, 80))
         dc = ImageDraw.Draw(image)
         dc.rectangle([(16, 16), (48, 48)], fill=(46, 204, 113))
@@ -1014,6 +1068,13 @@ class AgentFixGUI(tk.Tk):
         if not self.background_service_enabled.get():
             self.quit_window()
             return
+
+        if pystray is None or Image is None or ImageDraw is None:
+            messagebox.showwarning(
+                "托盘不可用",
+                "当前环境缺少托盘组件，无法隐藏到系统托盘。请保持窗口打开，或安装 pystray 与 Pillow 后重试。",
+            )
+            return
             
         # Otherwise, hide to tray
         self.withdraw()
@@ -1022,7 +1083,7 @@ class AgentFixGUI(tk.Tk):
                 pystray.MenuItem('显示面板 (Show)', self.show_window, default=True),
                 pystray.MenuItem('完全退出 (Quit)', self.quit_window)
             )
-            self.icon = pystray.Icon("AgentFix", self.create_image(), "AgentFix 监控守护中", menu)
+            self.icon = pystray.Icon("PatchPilot", self.create_image(), "PatchPilot 监控守护中", menu)
             
             # pystray has an issue on some Windows versions where run() crashes 
             # if it receives certain unhandled window messages.
@@ -1072,7 +1133,7 @@ class AgentFixGUI(tk.Tk):
                     env["PYTHONPATH"] = src_path
                     
                 self.agent_process = subprocess.Popen(
-                    [sys.executable, "-m", "agentfix", "serve"],
+                    [sys.executable, "-m", "patchpilot", "serve"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=env,
@@ -1145,5 +1206,5 @@ class AgentFixGUI(tk.Tk):
         messagebox.showinfo("正在克隆", f"正在后台克隆 {clone_url}...\n请稍候，克隆完成后会自动填充路径。")
 
 if __name__ == "__main__":
-    app = AgentFixGUI()
+    app = PatchPilotGUI()
     app.mainloop()

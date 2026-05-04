@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from agentfix.config import GuardrailSettings
-from agentfix.incident_ingest import IncidentIngestor
-from agentfix.repo_context import RepoContextCollector
+from patchpilot.config import GuardrailSettings
+from patchpilot.incident_ingest import IncidentIngestor
+from patchpilot.repo_context import RepoContextCollector
 
 
 def test_collect_prioritizes_non_python_log_path(tmp_path) -> None:

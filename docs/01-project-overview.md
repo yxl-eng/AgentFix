@@ -1,6 +1,6 @@
-# AgentFix 项目概览
+﻿# PatchPilot 项目概览
 
-AgentFix 是一个多语言 Web 服务自动修复 Agent。它把线上错误日志或 GitHub bug issue 转成结构化修复任务，自动完成代码定位、LLM 根因分析、补丁生成、验证、Draft PR 创建、修复记录生成和飞书通知。
+PatchPilot 是一个多语言 Web 服务自动修复 Agent。它把线上错误日志或 GitHub bug issue 转成结构化修复任务，自动完成代码定位、LLM 根因分析、补丁生成、验证、Draft PR 创建、修复记录生成和飞书通知。
 
 ## 工作流
 
@@ -45,9 +45,9 @@ Webhook / GitHub Issue / Log Watch
 
 ## 交付产物
 
-- Agent 逻辑代码在 `src/agentfix/`。
-- 自动修复中间产物在 `.agentfix-artifacts/`。
-- 事件去重状态在 `.agentfix-state/events.sqlite3`。
+- Agent 逻辑代码在 `src/patchpilot/`。
+- 自动修复中间产物在 `.patchpilot-artifacts/`。
+- 事件去重状态在 `.patchpilot-state/events.sqlite3`。
 - 自动生成的修复记录在 `records/`。
 
 ## 重要限制

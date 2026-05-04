@@ -1,12 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import subprocess
 from pathlib import Path
 
-from agentfix.config import RecordsSettings
-from agentfix.localization import bool_label, disposition_label, risk_label, root_cause_label, status_label
-from agentfix.models import RepairRecord
+from patchpilot.config import RecordsSettings
+from patchpilot.localization import bool_label, disposition_label, risk_label, root_cause_label, status_label
+from patchpilot.models import RepairRecord
 
 
 class RepairRecordWriter:
@@ -58,9 +58,10 @@ class RepairRecordWriter:
         human_step_lines = "\n".join(f"- {item}" for item in human_steps) or "- 无"
         repair_approach = self._render_repair_approach(result)
         generated_test_details = self._render_generated_test_details(result)
+        iteration_details = self._render_iteration_details(result)
         summary = self._summary_with_decision(record, result)
         return (
-            "# AgentFix 处理记录\n\n"
+            "# PatchPilot 处理记录\n\n"
             f"- Incident：`{record.incident_id}`\n"
             f"- Target：`{record.target}`\n"
             f"- 来源：`{record.source}`\n"
@@ -78,6 +79,8 @@ class RepairRecordWriter:
             f"{repair_approach}\n\n"
             "## 自动生成测试说明\n"
             f"{generated_test_details}\n\n"
+            "## 迭代修复过程\n"
+            f"{iteration_details}\n\n"
             "## 证据\n"
             f"{evidence_lines}\n\n"
             "## 计划调用的工具\n"
@@ -110,6 +113,28 @@ class RepairRecordWriter:
             return f"- 本次没有产生可提交补丁，原因：{result.failure_reason}"
         return "- 无"
 
+    def _render_iteration_details(self, result) -> str:
+        if not result or not result.repair_iterations:
+            return "- 无"
+        lines: list[str] = []
+        for item in result.repair_iterations:
+            context = ", ".join(item.code_context[:6]) if item.code_context else "无"
+            feedback = "；".join(item.validation_feedback) if item.validation_feedback else "无"
+            next_feedback = "；".join(item.next_feedback) if item.next_feedback else "无"
+            lines.extend(
+                [
+                    f"### 第 {item.attempt} 轮：{item.status}",
+                    f"- 当前假设：{item.hypothesis or '无'}",
+                    f"- 读取代码上下文：{context}",
+                    f"- 生成测试：{item.generated_test_summary or '无'}",
+                    f"- 补丁摘要：{item.patch_summary or '无'}",
+                    f"- 验证反馈：{feedback}",
+                    f"- 下一轮反馈：{next_feedback}",
+                    "",
+                ]
+            )
+        return "\n".join(lines).strip()
+
     def _render_generated_test_details(self, result) -> str:
         generated_test = result.generated_test if result else None
         if generated_test is None or not generated_test.attempted:
@@ -138,7 +163,7 @@ class RepairRecordWriter:
         add_result = self._git(["add", "--", *relative_paths])
         if add_result.returncode != 0:
             return
-        self._git(["commit", "-m", f"docs: record agentfix repair {record.incident_id}"])
+        self._git(["commit", "-m", f"docs: record patchpilot repair {record.incident_id}"])
 
     def _git(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         try:

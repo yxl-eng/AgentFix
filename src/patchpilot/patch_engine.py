@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from difflib import unified_diff
 from pathlib import Path
 
-from agentfix.config import GuardrailSettings
-from agentfix.models import AppliedPatch, PatchProposal
+from patchpilot.config import GuardrailSettings
+from patchpilot.models import AppliedPatch, PatchProposal
 
 
 BLOCKED_FILENAMES = {

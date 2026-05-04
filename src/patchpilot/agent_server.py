@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import json
@@ -8,16 +8,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agentfix.config import AppConfig, TargetSettings
-from agentfix.event_state import EventStateStore
-from agentfix.feishu import FeishuNotifier
-from agentfix.incident_ingest import IncidentIngestor
-from agentfix.models import PlannerDecision, RepairEvent, RepairRecord, RepairResult, ToolCallRecord
-from agentfix.planner import IncidentPlanner
-from agentfix.repair_records import RepairRecordWriter
+from patchpilot.config import AppConfig, TargetSettings
+from patchpilot.event_state import EventStateStore
+from patchpilot.feishu import FeishuNotifier
+from patchpilot.incident_ingest import IncidentIngestor
+from patchpilot.models import PlannerDecision, RepairEvent, RepairRecord, RepairResult, ToolCallRecord
+from patchpilot.planner import IncidentPlanner
+from patchpilot.repair_records import RepairRecordWriter
 
 if TYPE_CHECKING:
-    from agentfix.repair_orchestrator import RepairOrchestrator
+    from patchpilot.repair_orchestrator import RepairOrchestrator
 
 
 class AgentProcessor:
@@ -56,7 +56,8 @@ class AgentProcessor:
             log_file=payload.get("log_file"),
             incident_id=payload.get("incident_id"),
             base_branch=payload.get("base_branch"),
-            delivery_id=(headers or {}).get("X-AgentFix-Delivery"),
+            delivery_id=(headers or {}).get("X-PatchPilot-Delivery")
+            or (headers or {}).get("X-AgentFix-Delivery"),
             request_context=payload.get("request_context"),
             expected_outcome=payload.get("expected_outcome"),
             raw_payload=payload,
@@ -136,8 +137,6 @@ class AgentProcessor:
                 publish=self._planner_allows_publish(decision),
                 target_config=target_config,
             )
-            if result.validation is not None and not result.validation.tests_executed and result.status == "validated":
-                result.status = "needs_human_verification"
             self._attach_decision_to_result(result, decision)
             tool_calls.extend(self._tool_calls_from_result(result))
 
@@ -187,8 +186,8 @@ class AgentProcessor:
             return {"status": result.status, "event_key": event_key, "record": payload}
         except Exception as exc:
             error_payload = {"error": str(exc), "target": event.target, "source": event.source}
-            self.state_store.complete(event_key, "failed", error_payload)
-            return {"status": "failed", "event_key": event_key, "reason": str(exc)}
+            self.state_store.complete(event_key, "needs_manual_intervention", error_payload)
+            return {"status": "needs_manual_intervention", "event_key": event_key, "reason": str(exc)}
 
     def _write_planner_only_record(
         self,
@@ -416,9 +415,7 @@ class AgentProcessor:
     def _status_for_disposition(self, disposition: str) -> str:
         if disposition == "ignored":
             return "ignored"
-        if disposition == "needs_more_context":
-            return "needs_more_context"
-        return "reported"
+        return "needs_manual_intervention"
 
     def _planner_allows_publish(self, decision: PlannerDecision) -> bool:
         return "Git Commit" in decision.tool_plan or "Git Commit/PR" in decision.tool_plan
