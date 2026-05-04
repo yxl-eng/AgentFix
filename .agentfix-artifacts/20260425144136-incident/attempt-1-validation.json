@@ -1,0 +1,24 @@
+{
+  "syntax_check": true,
+  "tests_passed": false,
+  "commands": [
+    {
+      "command": "G:\\AgentFix\\.venv\\Scripts\\python.exe -m py_compile src/demo_service/repository.py",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "G:\\AgentFix\\.venv\\Scripts\\python.exe -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py",
+      "returncode": 2,
+      "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0\nrootdir: C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-qjdwq5vq\\Debug-demo\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 0 items / 3 errors\n\n=================================== ERRORS ====================================\n__________________ ERROR collecting tests/test_repository.py __________________\nImportError while importing test module 'C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-qjdwq5vq\\Debug-demo\\tests\\test_repository.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests\\test_repository.py:5: in <module>\n    from demo_service.models import User\nE   ModuleNotFoundError: No module named 'demo_service'\n___________________ ERROR collecting tests/test_service.py ____________________\nImportError while importing test module 'C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-qjdwq5vq\\Debug-demo\\tests\\test_service.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests\\test_service.py:5: in <module>\n    from demo_service.models import CreateUserRequest, UpdateUserRequest\nE   ModuleNotFoundError: No module named 'demo_service'\n_______________ ERROR collecting tests/test_profile_service.py ________________\nImportError while importing test module 'C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-qjdwq5vq\\Debug-demo\\tests\\test_profile_service.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests\\test_profile_service.py:5: in <module>\n    from demo_service.profile_service import (\nE   ModuleNotFoundError: No module named 'demo_service'\n=========================== short test summary info ===========================\nERROR tests/test_repository.py\nERROR tests/test_service.py\nERROR tests/test_profile_service.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!\n============================== 3 errors in 0.15s ==============================\n",
+      "stderr": ""
+    }
+  ],
+  "failure_summary": [
+    "Test command failed: G:\\AgentFix\\.venv\\Scripts\\python.exe -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py"
+  ],
+  "suggested_follow_up": [
+    "Review failing command output and retry with a narrower patch."
+  ]
+}

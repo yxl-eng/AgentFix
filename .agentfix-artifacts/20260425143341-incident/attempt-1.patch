@@ -1,0 +1,52 @@
+--- src/demo_service/repository.py
++++ src/demo_service/repository.py
+@@ -62,8 +62,8 @@
+         user = self.get_user_by_id(user_id)
+         if user is None:
+             return None
+-        # BUG: Using wrong attribute name 'email_address' instead of 'email'
+-        return user.email_address.split("@")[1]  # type: ignore[attr-defined]
++        # FIXED: Changed 'email_address' to 'email' to match User model
++        return user.email.split("@")[1]
+ 
+     # ==================== BUG #3: TypeError ====================
+     # Wrong type operation (adding string to int)
+@@ -79,7 +79,7 @@
+         user = self.get_user_by_id(user_id)
+         if user is None:
+             raise ValueError(f"User {user_id} not found")
+-        
++
+         name_length = len(user.name)
+         # BUG: Concatenating int with string instead of adding numerically
+         score = user_id + "bonus_points"  # type: ignore[operator]
+@@ -98,11 +98,11 @@
+         """
+         # This bug would normally be at module level, but we simulate it here
+         from demo_service.permissions import load_permissions  # type: ignore[attr-defined]
+-        
++
+         user = self.get_user_by_id(user_id)
+         if user is None:
+             return {"error": "User not found"}
+-        
++
+         permissions = load_permissions(user.role)
+         return {"user": user.model_dump(), "permissions": permissions}
+ 
+@@ -119,13 +119,13 @@
+             The preference value, or None if not set.
+         """
+         from demo_service.profile_service import get_profile
+-        
++
+         profile = get_profile(user_id)
+         # BUG: profile.preferences could be None if profile is incomplete
+         return profile.preferences[key]  # type: ignore[index]
+ 
+     # ==================== Correct implementations (for reference/testing) ====================
+-    
++
+     def list_all_users(self) -> list[User]:
+         """List all users in the system.
+ 

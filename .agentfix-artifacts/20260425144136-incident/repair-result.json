@@ -1,0 +1,75 @@
+{
+  "root_cause_summary": "The User model's email attribute is incorrectly referenced as 'email_address' in the get_user_email_domain method, causing an AttributeError when trying to access a non-existent attribute.",
+  "changed_files": [],
+  "diff_summary": "No validated patch was produced.",
+  "syntax_check": true,
+  "tests_run": [
+    "G:\\AgentFix\\.venv\\Scripts\\python.exe -m py_compile src/demo_service/repository.py",
+    "G:\\AgentFix\\.venv\\Scripts\\python.exe -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py"
+  ],
+  "pr_url": null,
+  "status": "needs_manual_intervention",
+  "analysis": {
+    "root_cause_summary": "The User model's email attribute is incorrectly referenced as 'email_address' in the get_user_email_domain method, causing an AttributeError when trying to access a non-existent attribute.",
+    "confidence": 0.95,
+    "candidate_targets": [
+      {
+        "path": "src/demo_service/repository.py",
+        "rationale": "The traceback points directly to line 62 in this file where 'user.email_address' is called. The code excerpt shows a comment indicating this is a bug and the correct attribute should be 'email'. This is the exact location of the error.",
+        "confidence": 0.95,
+        "change_summary": "Change 'user.email_address' to 'user.email' on line 62"
+      },
+      {
+        "path": "tests/test_repository.py",
+        "rationale": "The test file contains tests for the get_user_email_domain method. After fixing the bug in repository.py, the tests should be verified to ensure they pass with the corrected attribute name.",
+        "confidence": 0.6,
+        "change_summary": "Verify test assertions use correct attribute name if they reference email directly"
+      }
+    ],
+    "repair_plan": [
+      "1. Open src/demo_service/repository.py",
+      "2. Locate line 62 in the get_user_email_domain method",
+      "3. Change 'user.email_address.split(\"@\")[1]' to 'user.email.split(\"@\")[1]'",
+      "4. Remove or update the type ignore comment if it's no longer needed",
+      "5. Run existing tests to verify the fix doesn't break anything"
+    ],
+    "validation_focus": [
+      "Syntax: Ensure the attribute access syntax 'user.email' is correct after change",
+      "Type checking: Verify the User model's email attribute is correctly typed as string",
+      "Test execution: Run TestRepositoryEmailDomain tests to confirm they pass",
+      "Edge cases: Test with users having different email formats and missing users"
+    ],
+    "additional_notes": [
+      "The User model in models.py shows the correct attribute is 'email', not 'email_address'",
+      "The traceback comment in repository.py explicitly mentions this is a bug with wrong attribute name",
+      "No other files need changes as the error is isolated to this single line of code"
+    ]
+  },
+  "validation": {
+    "syntax_check": true,
+    "tests_passed": false,
+    "commands": [
+      {
+        "command": "G:\\AgentFix\\.venv\\Scripts\\python.exe -m py_compile src/demo_service/repository.py",
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "command": "G:\\AgentFix\\.venv\\Scripts\\python.exe -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py",
+        "returncode": 2,
+        "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0\nrootdir: C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-5kl3oz33\\Debug-demo\nconfigfile: pyproject.toml\nplugins: anyio-4.13.0\ncollected 0 items / 3 errors\n\n=================================== ERRORS ====================================\n__________________ ERROR collecting tests/test_repository.py __________________\nImportError while importing test module 'C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-5kl3oz33\\Debug-demo\\tests\\test_repository.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests\\test_repository.py:5: in <module>\n    from demo_service.models import User\nE   ModuleNotFoundError: No module named 'demo_service'\n___________________ ERROR collecting tests/test_service.py ____________________\nImportError while importing test module 'C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-5kl3oz33\\Debug-demo\\tests\\test_service.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests\\test_service.py:5: in <module>\n    from demo_service.models import CreateUserRequest, UpdateUserRequest\nE   ModuleNotFoundError: No module named 'demo_service'\n_______________ ERROR collecting tests/test_profile_service.py ________________\nImportError while importing test module 'C:\\Users\\dell\\AppData\\Local\\Temp\\agentfix-5kl3oz33\\Debug-demo\\tests\\test_profile_service.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests\\test_profile_service.py:5: in <module>\n    from demo_service.profile_service import (\nE   ModuleNotFoundError: No module named 'demo_service'\n=========================== short test summary info ===========================\nERROR tests/test_repository.py\nERROR tests/test_service.py\nERROR tests/test_profile_service.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!\n============================== 3 errors in 0.13s ==============================\n",
+        "stderr": ""
+      }
+    ],
+    "failure_summary": [
+      "Test command failed: G:\\AgentFix\\.venv\\Scripts\\python.exe -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py"
+    ],
+    "suggested_follow_up": [
+      "Review failing command output and retry with a narrower patch."
+    ]
+  },
+  "artifact_dir": "G:\\AgentFix\\.agentfix-artifacts\\20260425144136-incident",
+  "branch": null,
+  "failure_reason": "Test command failed: G:\\AgentFix\\.venv\\Scripts\\python.exe -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py"
+}

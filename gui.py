@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import subprocess
@@ -197,7 +197,6 @@ class PatchPilotGUI(tk.Tk):
             ("incidents", "事故记录"),
             ("config", "配置中心"),
             ("targets", "目标服务"),
-            ("system", "系统状态"),
             ("manual", "手动运行"),
         ]:
             button = tk.Button(
@@ -220,14 +219,13 @@ class PatchPilotGUI(tk.Tk):
         self.content = ttk.Frame(self)
         self.content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.pages: dict[str, ttk.Frame] = {}
-        for key in ["dashboard", "incidents", "config", "targets", "system", "manual"]:
+        for key in ["dashboard", "incidents", "config", "targets", "manual"]:
             self.pages[key] = ttk.Frame(self.content)
 
         self._build_dashboard_page()
         self._build_incidents_page()
         self._build_config_page()
         self._build_targets_page()
-        self._build_system_page()
         self._build_manual_page()
 
     def show_page(self, page: str) -> None:
@@ -307,16 +305,20 @@ class PatchPilotGUI(tk.Tk):
 
         filters = ttk.Frame(left, style="Card.TFrame")
         filters.pack(fill=tk.X, padx=14, pady=12)
+        
+        ttk.Label(filters, text="服务名搜索:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 4))
         self.incident_query = tk.StringVar()
         self.incident_status = tk.StringVar(value="全部")
         ttk.Entry(filters, textvariable=self.incident_query, width=32).pack(side=tk.LEFT)
+        
+        ttk.Label(filters, text="状态筛选:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(16, 4))
         ttk.Combobox(
             filters,
             textvariable=self.incident_status,
-            values=["全部", "fixed", "needs_human_verification", "needs_manual_intervention", "ignored"],
+            values=["全部", "已修复", "需要人工验证", "需要人工处理", "已忽略"],
             width=22,
             state="readonly",
-        ).pack(side=tk.LEFT, padx=8)
+        ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(filters, text="筛选", command=self.render_incident_table).pack(side=tk.LEFT)
 
         columns = ("incident_id", "target", "status", "disposition", "updated_at")
@@ -358,7 +360,6 @@ class PatchPilotGUI(tk.Tk):
         page = self.pages["config"]
         header = self.make_header(page, "配置中心", "编辑模型、密钥、Planner、风控和运行参数")
         ttk.Button(header, text="保存到 local.yaml", style="Primary.TButton", command=self.save_global_config).pack(side=tk.RIGHT)
-        ttk.Button(header, text="配置自检 (Run Doctor)", command=self.run_doctor).pack(side=tk.RIGHT, padx=(0, 8))
 
         scroll = ScrollFrame(page)
         scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
@@ -389,6 +390,19 @@ class PatchPilotGUI(tk.Tk):
         self._add_check(body, ("agent", "report", "notify_on_needs_more_context"), "上下文不足事件发送飞书")
 
         self._add_section(body, "运行与验证")
+        
+        bg_row = ttk.Frame(body)
+        bg_row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(bg_row, text="守护模式", width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        bg_btn = self._make_check(bg_row, self.background_service_enabled, "关闭窗口后，后台常驻监听 (Agent Serve)")
+        
+        def toggle_service():
+            if not self.background_service_enabled.get() and hasattr(self, "stop_background_service"):
+                self.stop_background_service()
+                
+        bg_btn.config(command=lambda: [self.background_service_enabled.set(not self.background_service_enabled.get()), self._refresh_checks(), toggle_service()])
+        bg_btn.pack(side=tk.LEFT)
+
         self._add_path_entry(body, ("runtime", "workspace_root"), "本地代码工作区 (Workspace)")
         self._add_entry(body, ("runtime", "artifact_root"), "运行产物目录")
         self._add_entry(body, ("runtime", "max_repair_attempts"), "最大修复尝试次数")
@@ -431,73 +445,14 @@ class PatchPilotGUI(tk.Tk):
         self._target_action_entry(form, "repo_full_name", "远程仓库 (URL 或 Name)", "自动定位/克隆", self.auto_locate_repo)
         self._target_path_entry(form, "repo_path", "本地仓库路径")
         self._target_entry(form, "base_branch", "PR 目标分支")
-        self._target_entry(form, "working_dir", "工作目录")
         self._target_entry(form, "service_log_file", "服务日志文件")
         self._target_entry(form, "start_command", "服务启动命令")
-        self._target_entry(form, "healthcheck_url", "健康检查地址")
-        self._target_text(form, "test_commands", "测试命令，每行一个")
-        self._target_text(form, "verification_requests", "接口验证请求（JSON）")
-        self._target_check(form, "generated_tests.enabled", "启用自动生成回归测试")
-        self._target_entry(form, "generated_tests.framework", "生成测试框架")
-        self._target_entry(form, "generated_tests.max_files", "生成测试最大文件数")
-        self._target_check(form, "generated_tests.require_prefix_failure", "要求修复前失败")
-        self._target_check(form, "generated_tests.commit_when_stable", "稳定后提交生成测试")
-        self._target_combo(
-            form,
-            "generated_tests.failure_policy",
-            "生成测试失败策略",
-            [
-                "continue_existing_validation",
-                "needs_human_verification",
-            ],
-        )
         self.refresh_target_selector()
-
-    def _build_system_page(self) -> None:
-        page = self.pages["system"]
-        header = self.make_header(page, "系统状态 (Doctor)", "查看 PatchPilot 运行环境、依赖状态及凭据校验")
-        ttk.Button(header, text="执行自检 (Run Doctor)", style="Primary.TButton", command=self.run_doctor).pack(side=tk.RIGHT)
-        
-        scroll = ScrollFrame(page)
-        scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
-        body = scroll.body
-        
-        self.doctor_output = tk.Text(body, height=30, bg="#1f2329", fg="#dfe3eb", insertbackground="#ffffff", font=("Cascadia Mono", 10), padx=10, pady=10)
-        self.doctor_output.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
-
-    def run_doctor(self) -> None:
-        self.show_page("system")
-        self.doctor_output.delete("1.0", tk.END)
-        self.doctor_output.insert(tk.END, "正在运行 PatchPilot Doctor 自检...\n\n")
-        command = [sys.executable, "-m", "patchpilot", "doctor"]
-        
-        def worker() -> None:
-            process = subprocess.run(command, capture_output=True, text=True, check=False)
-            output = process.stdout + "\n" + process.stderr
-            if hasattr(self, "doctor_output") and self.doctor_output.winfo_exists():
-                self.doctor_output.after(0, lambda: self.doctor_output.insert(tk.END, output))
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def _build_manual_page(self) -> None:
         page = self.pages["manual"]
         self.make_header(page, "手动运行", "直接选择本地仓库和日志文件，触发一次 PatchPilot 修复")
         card = self.make_card(page, "运行参数")
-        
-        # Add background service toggle
-        bg_row = ttk.Frame(card)
-        bg_row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(bg_row, text="守护模式", width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
-        bg_btn = self._make_check(bg_row, self.background_service_enabled, "关闭窗口后，后台常驻监听 (Agent Serve)")
-        
-        def toggle_service():
-            if not self.background_service_enabled.get():
-                self.stop_background_service()
-                
-        bg_btn.config(command=lambda: [self.background_service_enabled.set(not self.background_service_enabled.get()), self._refresh_checks(), toggle_service()])
-        bg_btn.pack(side=tk.LEFT)
-        
-        ttk.Separator(card).pack(fill=tk.X, pady=8)
         
         self.manual_repo = tk.StringVar()
         self.manual_log = tk.StringVar()
@@ -507,7 +462,15 @@ class PatchPilotGUI(tk.Tk):
         self._row(card, "日志文件", self.manual_log, browse=lambda: self._browse_file(self.manual_log))
         self._row(card, "PR 目标分支", self.manual_branch)
         self._make_check(card, self.manual_no_pr, "只验证，不创建 PR").pack(anchor=tk.W, padx=16, pady=8)
-        ttk.Button(card, text="开始运行", style="Primary.TButton", command=self.run_manual).pack(anchor=tk.W, padx=16, pady=10)
+        
+        action_frame = ttk.Frame(card)
+        action_frame.pack(fill=tk.X, padx=16, pady=10)
+        self.btn_run_manual = ttk.Button(action_frame, text="开始运行", style="Primary.TButton", command=self.run_manual)
+        self.btn_run_manual.pack(side=tk.LEFT)
+        
+        self.manual_status_label = ttk.Label(action_frame, text="当前进度: 闲置 (Idle)", style="Subtitle.TLabel")
+        self.manual_status_label.pack(side=tk.LEFT, padx=(12, 0))
+        
         self.manual_output = tk.Text(card, height=14, bg="#1f2329", fg="#dfe3eb", insertbackground="#ffffff", font=("Cascadia Mono", 10))
         self.manual_output.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
 
@@ -710,14 +673,28 @@ class PatchPilotGUI(tk.Tk):
     def render_incident_table(self) -> None:
         query = self.incident_query.get().strip().lower() if hasattr(self, "incident_query") else ""
         status_filter = self.incident_status.get() if hasattr(self, "incident_status") else "全部"
+        
+        # 建立中文标签到英文内部状态的映射，需要与 localization 保持一致
+        status_map = {
+            "已修复": "fixed",
+            "需要人工验证": "needs_human_verification",
+            "需要人工处理": "needs_manual_intervention",
+            "已忽略": "ignored",
+            "重复事件": "duplicate",
+            "已拒绝": "rejected"
+        }
+        filter_key = status_map.get(status_filter, status_filter)
+        
         for row in self.incidents_tree.get_children():
             self.incidents_tree.delete(row)
         for item in self.records:
-            if status_filter != "全部" and public_status(item.get("status")) != status_filter:
+            if status_filter != "全部" and public_status(item.get("status")) != filter_key:
                 continue
-            searchable = json.dumps(item, ensure_ascii=False).lower()
-            if query and query not in searchable:
+            
+            target_name = str(item.get("target", "")).lower()
+            if query and query not in target_name:
                 continue
+                
             self.incidents_tree.insert("", tk.END, iid=item.get("incident_id"), values=self._record_values(item))
 
     def _record_values(self, item: dict, include_message: bool = False) -> tuple:
@@ -923,35 +900,28 @@ class PatchPilotGUI(tk.Tk):
         if not name:
             messagebox.showerror("保存失败", "目标服务名称不能为空。")
             return
-        try:
-            verification_requests = json.loads(self.target_vars["verification_requests"].get("1.0", tk.END).strip() or "[]")
-        except json.JSONDecodeError as exc:
-            messagebox.showerror("保存失败", f"接口验证请求 JSON 格式错误：{exc}")
-            return
-        try:
-            generated_max_files = int(self.target_vars["generated_tests.max_files"].get().strip() or "1")
-        except ValueError as exc:
-            messagebox.showerror("保存失败", f"生成测试最大文件数必须是整数：{exc}")
-            return
+        
+        # Preserve old advanced settings if they exist
+        old_target = self.config_data.get("targets", {}).get(old_name, {})
+        
         target = {
             "repo_full_name": self.target_vars["repo_full_name"].get().strip() or None,
             "repo_path": self.target_vars["repo_path"].get().strip(),
             "base_branch": self.target_vars["base_branch"].get().strip() or "main",
-            "working_dir": self.target_vars["working_dir"].get().strip() or ".",
+            "working_dir": ".",
             "service_log_file": self.target_vars["service_log_file"].get().strip() or None,
             "start_command": self.target_vars["start_command"].get().strip() or None,
-            "healthcheck_url": self.target_vars["healthcheck_url"].get().strip() or None,
-            "test_commands": [line.strip() for line in self.target_vars["test_commands"].get("1.0", tk.END).splitlines() if line.strip()],
-            "verification_requests": verification_requests,
-            "generated_tests": {
-                "enabled": self.target_vars["generated_tests.enabled"].get(),
-                "framework": self.target_vars["generated_tests.framework"].get().strip() or "auto",
-                "max_files": generated_max_files,
-                "require_prefix_failure": self.target_vars["generated_tests.require_prefix_failure"].get(),
-                "commit_when_stable": self.target_vars["generated_tests.commit_when_stable"].get(),
-                "failure_policy": self.target_vars["generated_tests.failure_policy"].get()
-                or "continue_existing_validation",
-            },
+            "healthcheck_url": old_target.get("healthcheck_url"),
+            "test_commands": old_target.get("test_commands", []),
+            "verification_requests": old_target.get("verification_requests", []),
+            "generated_tests": old_target.get("generated_tests", {
+                "enabled": True,
+                "framework": "auto",
+                "max_files": 1,
+                "require_prefix_failure": True,
+                "commit_when_stable": True,
+                "failure_policy": "continue_existing_validation",
+            }),
         }
         self.config_data.setdefault("targets", {})
         if old_name and old_name != name:
@@ -1037,9 +1007,44 @@ class PatchPilotGUI(tk.Tk):
         self.manual_output.insert(tk.END, "运行命令：\n" + " ".join(command) + "\n\n")
 
         def worker() -> None:
-            process = subprocess.run(command, capture_output=True, text=True, check=False)
-            output = process.stdout + "\n" + process.stderr
-            self.manual_output.after(0, lambda: self.manual_output.insert(tk.END, output))
+            self.manual_status_label.after(0, lambda: self.manual_status_label.config(text="当前进度: 正在初始化 Agent..."))
+            self.btn_run_manual.after(0, lambda: self.btn_run_manual.config(state=tk.DISABLED))
+            
+            try:
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    encoding="utf-8",
+                    errors="replace"
+                )
+                
+                for line in process.stdout:
+                    self.manual_output.after(0, lambda l=line: self.manual_output.insert(tk.END, l))
+                    self.manual_output.after(0, lambda: self.manual_output.see(tk.END))
+                    
+                    lower_line = line.lower()
+                    if "tool" in lower_line and "call" in lower_line:
+                        self.manual_status_label.after(0, lambda l=line.strip()[-50:]: self.manual_status_label.config(text=f"当前进度: 正在调用工具 -> ...{l}"))
+                    elif "thought" in lower_line or "思考:" in lower_line:
+                        self.manual_status_label.after(0, lambda: self.manual_status_label.config(text="当前进度: Agent 正在思考分析..."))
+                    elif "patch" in lower_line and "apply" in lower_line:
+                        self.manual_status_label.after(0, lambda: self.manual_status_label.config(text="当前进度: 正在应用代码补丁..."))
+                    elif "test" in lower_line and "run" in lower_line:
+                        self.manual_status_label.after(0, lambda: self.manual_status_label.config(text="当前进度: 正在运行测试验证..."))
+                        
+                process.wait()
+                if process.returncode == 0:
+                    self.manual_status_label.after(0, lambda: self.manual_status_label.config(text="当前进度: 运行完成 (Success)"))
+                else:
+                    self.manual_status_label.after(0, lambda rc=process.returncode: self.manual_status_label.config(text=f"当前进度: 运行失败 (Exit Code {rc})"))
+            except Exception as e:
+                self.manual_output.after(0, lambda e=e: self.manual_output.insert(tk.END, f"\n执行出错: {e}\n"))
+                self.manual_status_label.after(0, lambda: self.manual_status_label.config(text="当前进度: 发生异常"))
+            finally:
+                self.btn_run_manual.after(0, lambda: self.btn_run_manual.config(state=tk.NORMAL))
 
         threading.Thread(target=worker, daemon=True).start()
 
