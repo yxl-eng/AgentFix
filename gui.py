@@ -380,11 +380,9 @@ class PatchPilotGUI(tk.Tk):
         self._add_section(body, "Agent Planner 与风控")
         self._add_check(body, ("agent", "planner", "enabled"), "启用环境感知 Planner")
         self._add_entry(body, ("agent", "planner", "max_steps"), "Planner 最大工具步数")
-        self._add_text(body, ("agent", "planner", "allowed_tools"), "允许调用的工具，每行一个")
         self._add_entry(body, ("guardrails", "max_changed_files"), "最大修改文件数")
         self._add_entry(body, ("guardrails", "max_patch_lines"), "最大补丁行数")
         self._add_entry(body, ("guardrails", "min_confidence"), "最小分析置信度")
-        self._add_text(body, ("guardrails", "ignored_paths"), "忽略路径，每行一个")
         self._add_check(body, ("agent", "report", "notify_on_ignored"), "忽略事件也发送飞书")
         self._add_check(body, ("agent", "report", "notify_on_report_only"), "只报告事件发送飞书")
         self._add_check(body, ("agent", "report", "notify_on_needs_more_context"), "上下文不足事件发送飞书")
@@ -409,12 +407,9 @@ class PatchPilotGUI(tk.Tk):
         self._add_entry(body, ("server", "host"), "Agent 服务监听地址")
         self._add_entry(body, ("server", "port"), "Agent 服务端口")
         self._add_entry(body, ("server", "poll_interval_seconds"), "日志轮询间隔秒")
-        self._add_entry(body, ("server", "state_path"), "事件去重数据库")
-        self._add_entry(body, ("validation", "python_executable"), "Python 可执行文件")
         self._add_entry(body, ("validation", "service_start_timeout_seconds"), "服务启动超时秒")
         self._add_entry(body, ("validation", "healthcheck_timeout_seconds"), "健康检查超时秒")
         self._add_entry(body, ("validation", "healthcheck_interval_seconds"), "健康检查间隔秒")
-        self._add_text(body, ("validation", "test_commands"), "全局测试命令，每行一个")
         self._add_entry(body, ("records", "root"), "修复记录目录")
         self._add_check(body, ("records", "auto_commit"), "records 自动 commit")
         self.load_global_form()
@@ -442,11 +437,10 @@ class PatchPilotGUI(tk.Tk):
         form = ttk.Frame(card, style="Card.TFrame")
         form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
         self._target_entry(form, "name", "目标服务名称")
-        self._target_action_entry(form, "repo_full_name", "远程仓库 (URL 或 Name)", "自动定位/克隆", self.auto_locate_repo)
+        self._target_action_entry(form, "repo_full_name", "远程仓库 (可选，无本地路径时填)", "自动定位/克隆", self.auto_locate_repo)
         self._target_path_entry(form, "repo_path", "本地仓库路径")
         self._target_entry(form, "base_branch", "PR 目标分支")
-        self._target_entry(form, "service_log_file", "服务日志文件")
-        self._target_entry(form, "start_command", "服务启动命令")
+        self._target_path_entry(form, "service_log_file", "服务日志文件 (本地Watch模式必填)", browse_type="file")
         self.refresh_target_selector()
 
     def _build_manual_page(self) -> None:
@@ -554,10 +548,11 @@ class PatchPilotGUI(tk.Tk):
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(row, text=button_text, command=action).pack(side=tk.LEFT, padx=(8, 0))
 
-    def _target_path_entry(self, parent, key: str, label: str) -> None:
+    def _target_path_entry(self, parent, key: str, label: str, browse_type: str = "dir") -> None:
         var = tk.StringVar()
         self.target_vars[key] = var
-        self._row(parent, label, var, browse=lambda: self._browse_dir(var))
+        browse_cmd = lambda: self._browse_dir(var) if browse_type == "dir" else self._browse_file(var)
+        self._row(parent, label, var, browse=browse_cmd)
 
     def _target_text(self, parent, key: str, label: str) -> None:
         ttk.Label(parent, text=label, style="Subtitle.TLabel").pack(anchor=tk.W, padx=16, pady=(10, 4))
