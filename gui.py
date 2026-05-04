@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import threading
+from collections import deque
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,10 @@ import tkinter as tk
 from tkinter import ttk
 
 import yaml
+import pystray
+from PIL import Image, ImageDraw
+from win10toast import ToastNotifier
+import os
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
@@ -20,7 +25,7 @@ if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
 from agentfix.localization import disposition_label, risk_label, root_cause_label, status_label
 
 
-APP_TITLE = "AgentFix 桌面控制台"
+APP_TITLE = "AgentFix Console"
 BASE_CONFIG = Path("agentfix.yaml")
 LOCAL_CONFIG = Path("agentfix.local.yaml")
 
@@ -119,6 +124,15 @@ class AgentFixGUI(tk.Tk):
         self.secret_buttons: dict[tuple[str, ...], ttk.Button] = {}
         self.check_refreshers: list[callable] = []
 
+        # Background Service Variables
+        self.background_service_enabled = tk.BooleanVar(value=False)
+        self.agent_process = None
+
+        # Tray and Toast setup
+        self.toaster = ToastNotifier()
+        self.icon = None
+        self.protocol('WM_DELETE_WINDOW', self.hide_window)
+
         self._configure_style()
         self.load_config()
         self._build_shell()
@@ -128,8 +142,9 @@ class AgentFixGUI(tk.Tk):
     def _configure_style(self) -> None:
         style = ttk.Style(self)
         themes = set(style.theme_names())
-        if sys.platform.startswith("win") and "vista" in themes:
-            style.theme_use("vista")
+        if "clam" in themes:
+            style.theme_use("clam")
+            
         style.configure(".", font=("Microsoft YaHei UI", 10))
         style.configure("TFrame", background="#f7f8fb")
         style.configure("Card.TFrame", background="#ffffff", relief="flat")
@@ -140,7 +155,14 @@ class AgentFixGUI(tk.Tk):
         style.configure("Muted.TLabel", background="#ffffff", foreground="#646a73")
         style.configure("SidebarTitle.TLabel", background="#ffffff", foreground="#1f2329", font=("Microsoft YaHei UI", 16, "bold"))
         style.configure("SidebarSub.TLabel", background="#ffffff", foreground="#646a73", font=("Microsoft YaHei UI", 9))
-        style.configure("Primary.TButton", background="#3370ff", foreground="#ffffff")
+        
+        # Modern Button Styles
+        style.configure("TButton", background="#ffffff", foreground="#1f2329", bordercolor="#d0d3d6", lightcolor="#ffffff", darkcolor="#ffffff", borderwidth=1, focuscolor="#ffffff", padding=(12, 6))
+        style.map("TButton", background=[("active", "#f2f3f5"), ("pressed", "#e5e6eb")])
+        
+        style.configure("Primary.TButton", background="#3370ff", foreground="#ffffff", bordercolor="#3370ff", lightcolor="#3370ff", darkcolor="#3370ff", borderwidth=1, focuscolor="#3370ff", padding=(12, 6))
+        style.map("Primary.TButton", background=[("active", "#1e5def"), ("pressed", "#1043c7")])
+        
         style.configure("Treeview", rowheight=34, fieldbackground="#ffffff", background="#ffffff")
         style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 10, "bold"), background="#f7f9fc", foreground="#646a73")
 
@@ -160,6 +182,7 @@ class AgentFixGUI(tk.Tk):
             ("incidents", "事故记录"),
             ("config", "配置中心"),
             ("targets", "目标服务"),
+            ("system", "系统状态"),
             ("manual", "手动运行"),
         ]:
             button = tk.Button(
@@ -182,13 +205,14 @@ class AgentFixGUI(tk.Tk):
         self.content = ttk.Frame(self)
         self.content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.pages: dict[str, ttk.Frame] = {}
-        for key in ["dashboard", "incidents", "config", "targets", "manual"]:
+        for key in ["dashboard", "incidents", "config", "targets", "system", "manual"]:
             self.pages[key] = ttk.Frame(self.content)
 
         self._build_dashboard_page()
         self._build_incidents_page()
         self._build_config_page()
         self._build_targets_page()
+        self._build_system_page()
         self._build_manual_page()
 
     def show_page(self, page: str) -> None:
@@ -293,29 +317,32 @@ class AgentFixGUI(tk.Tk):
         self.incidents_tree.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
         self.incidents_tree.bind("<<TreeviewSelect>>", self.on_record_selected)
 
-        right_outer = tk.Frame(body, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef", width=430)
+        right_outer = tk.Frame(body, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef", width=480)
         right_outer.pack(side=tk.RIGHT, fill=tk.BOTH)
         right_outer.pack_propagate(False)
         right = ttk.Frame(right_outer, style="Card.TFrame")
         right.pack(fill=tk.BOTH, expand=True)
         ttk.Label(right, text="事故详情", style="CardTitle.TLabel").pack(anchor=tk.W, padx=16, pady=(14, 8))
         ttk.Separator(right).pack(fill=tk.X)
-        self.record_detail = tk.Text(
-            right,
-            wrap=tk.WORD,
-            bd=0,
-            bg="#ffffff",
-            fg="#1f2329",
-            font=("Microsoft YaHei UI", 10),
-            padx=16,
-            pady=14,
-        )
-        self.record_detail.pack(fill=tk.BOTH, expand=True)
+        
+        self.detail_notebook = ttk.Notebook(right)
+        self.detail_notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        
+        self.tab_overview = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Microsoft YaHei UI", 10), padx=16, pady=14)
+        self.tab_analysis = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Microsoft YaHei UI", 10), padx=16, pady=14)
+        self.tab_patch = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Cascadia Mono", 10), padx=16, pady=14)
+        self.tab_tools = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Cascadia Mono", 10), padx=16, pady=14)
+        
+        self.detail_notebook.add(self.tab_overview, text="概览")
+        self.detail_notebook.add(self.tab_analysis, text="分析与计划")
+        self.detail_notebook.add(self.tab_patch, text="补丁与验证")
+        self.detail_notebook.add(self.tab_tools, text="工具调用")
 
     def _build_config_page(self) -> None:
         page = self.pages["config"]
         header = self.make_header(page, "配置中心", "编辑模型、密钥、Planner、风控和运行参数")
-        ttk.Button(header, text="保存到 agentfix.local.yaml", style="Primary.TButton", command=self.save_global_config).pack(side=tk.RIGHT)
+        ttk.Button(header, text="保存到 local.yaml", style="Primary.TButton", command=self.save_global_config).pack(side=tk.RIGHT)
+        ttk.Button(header, text="配置自检 (Run Doctor)", command=self.run_doctor).pack(side=tk.RIGHT, padx=(0, 8))
 
         scroll = ScrollFrame(page)
         scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
@@ -346,6 +373,7 @@ class AgentFixGUI(tk.Tk):
         self._add_check(body, ("agent", "report", "notify_on_needs_more_context"), "上下文不足事件发送飞书")
 
         self._add_section(body, "运行与验证")
+        self._add_path_entry(body, ("runtime", "workspace_root"), "本地代码工作区 (Workspace)")
         self._add_entry(body, ("runtime", "artifact_root"), "运行产物目录")
         self._add_entry(body, ("runtime", "max_repair_attempts"), "最大修复尝试次数")
         self._add_entry(body, ("server", "host"), "Agent 服务监听地址")
@@ -384,7 +412,7 @@ class AgentFixGUI(tk.Tk):
         form = ttk.Frame(card, style="Card.TFrame")
         form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
         self._target_entry(form, "name", "目标服务名称")
-        self._target_entry(form, "repo_full_name", "GitHub 仓库名")
+        self._target_action_entry(form, "repo_full_name", "远程仓库 (URL 或 Name)", "自动定位/克隆", self.auto_locate_repo)
         self._target_path_entry(form, "repo_path", "本地仓库路径")
         self._target_entry(form, "base_branch", "PR 目标分支")
         self._target_entry(form, "working_dir", "工作目录")
@@ -401,10 +429,52 @@ class AgentFixGUI(tk.Tk):
         self._target_check(form, "generated_tests.fallback_to_v2_on_failure", "生成测试失败时继续既有验证")
         self.refresh_target_selector()
 
+    def _build_system_page(self) -> None:
+        page = self.pages["system"]
+        header = self.make_header(page, "系统状态 (Doctor)", "查看 AgentFix 运行环境、依赖状态及凭据校验")
+        ttk.Button(header, text="执行自检 (Run Doctor)", style="Primary.TButton", command=self.run_doctor).pack(side=tk.RIGHT)
+        
+        scroll = ScrollFrame(page)
+        scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
+        body = scroll.body
+        
+        self.doctor_output = tk.Text(body, height=30, bg="#1f2329", fg="#dfe3eb", insertbackground="#ffffff", font=("Cascadia Mono", 10), padx=10, pady=10)
+        self.doctor_output.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+
+    def run_doctor(self) -> None:
+        self.show_page("system")
+        self.doctor_output.delete("1.0", tk.END)
+        self.doctor_output.insert(tk.END, "正在运行 AgentFix Doctor 自检...\n\n")
+        command = [sys.executable, "-m", "agentfix", "doctor"]
+        
+        def worker() -> None:
+            process = subprocess.run(command, capture_output=True, text=True, check=False)
+            output = process.stdout + "\n" + process.stderr
+            if hasattr(self, "doctor_output") and self.doctor_output.winfo_exists():
+                self.doctor_output.after(0, lambda: self.doctor_output.insert(tk.END, output))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _build_manual_page(self) -> None:
         page = self.pages["manual"]
         self.make_header(page, "手动运行", "直接选择本地仓库和日志文件，触发一次 AgentFix 修复")
         card = self.make_card(page, "运行参数")
+        
+        # Add background service toggle
+        bg_row = ttk.Frame(card)
+        bg_row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(bg_row, text="守护模式", width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        bg_btn = self._make_check(bg_row, self.background_service_enabled, "关闭窗口后，后台常驻监听 (Agent Serve)")
+        
+        def toggle_service():
+            if not self.background_service_enabled.get():
+                self.stop_background_service()
+                
+        bg_btn.config(command=lambda: [self.background_service_enabled.set(not self.background_service_enabled.get()), self._refresh_checks(), toggle_service()])
+        bg_btn.pack(side=tk.LEFT)
+        
+        ttk.Separator(card).pack(fill=tk.X, pady=8)
+        
         self.manual_repo = tk.StringVar()
         self.manual_log = tk.StringVar()
         self.manual_branch = tk.StringVar(value="main")
@@ -437,6 +507,18 @@ class AgentFixGUI(tk.Tk):
         self.form_vars[path] = var
         self._row(parent, label, var)
 
+    def _add_path_entry(self, parent, path: tuple[str, ...], label: str, browse_type: str = "dir") -> None:
+        var = tk.StringVar()
+        self.form_vars[path] = var
+        def browse():
+            if browse_type == "dir":
+                p = filedialog.askdirectory()
+            else:
+                p = filedialog.askopenfilename()
+            if p:
+                var.set(p)
+        self._row(parent, label, var, browse=browse)
+
     def _add_secret(self, parent, path: tuple[str, ...], label: str) -> None:
         var = tk.StringVar()
         self.form_vars[path] = var
@@ -466,6 +548,16 @@ class AgentFixGUI(tk.Tk):
         self.target_vars[key] = var
         self._row(parent, label, var)
 
+    def _target_action_entry(self, parent, key: str, label: str, button_text: str, action: callable) -> None:
+        var = tk.StringVar()
+        self.target_vars[key] = var
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        entry = ttk.Entry(row, textvariable=var)
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(row, text=button_text, command=action).pack(side=tk.LEFT, padx=(8, 0))
+
     def _target_path_entry(self, parent, key: str, label: str) -> None:
         var = tk.StringVar()
         self.target_vars[key] = var
@@ -485,23 +577,24 @@ class AgentFixGUI(tk.Tk):
     def _make_check(self, parent, variable: tk.BooleanVar, label: str) -> tk.Button:
         button = tk.Button(
             parent,
-            bd=0,
+            bd=1,
+            relief=tk.SOLID,
             anchor="w",
-            padx=10,
-            pady=7,
+            padx=12,
+            pady=8,
             bg="#ffffff",
-            fg="#646a73",
+            fg="#1f2329",
             activebackground="#edf3ff",
             activeforeground="#3370ff",
-            font=("Microsoft YaHei UI", 10),
+            font=("Microsoft YaHei UI", 10, "bold"),
             cursor="hand2",
         )
 
         def refresh() -> None:
             if variable.get():
-                button.configure(text=f"已启用  {label}", bg="#edf3ff", fg="#3370ff")
+                button.configure(text=f"☑  {label} (已开启)", bg="#edf3ff", fg="#3370ff", highlightbackground="#3370ff")
             else:
-                button.configure(text=f"未启用  {label}", bg="#ffffff", fg="#646a73")
+                button.configure(text=f"☐  {label} (未开启)", bg="#ffffff", fg="#646a73", highlightbackground="#e5e8ef")
 
         def toggle() -> None:
             variable.set(not variable.get())
@@ -601,49 +694,73 @@ class AgentFixGUI(tk.Tk):
         self.render_record_detail()
 
     def render_record_detail(self) -> None:
-        self.record_detail.configure(state=tk.NORMAL)
-        self.record_detail.delete("1.0", tk.END)
+        for tab in [self.tab_overview, self.tab_analysis, self.tab_patch, self.tab_tools]:
+            tab.configure(state=tk.NORMAL)
+            tab.delete("1.0", tk.END)
+
         data = self.current_record or {}
         rr = data.get("repair_result") or {}
         summary = data.get("message", "")
         decision_reason = data.get("decision_reason") or rr.get("decision_reason")
         if decision_reason and decision_reason not in summary:
             summary = f"{summary}（处理判断：{decision_reason}）"
+            
         analysis = rr.get("analysis") or {}
         repair_plan = analysis.get("repair_plan") or []
-        repair_plan_lines = [f"- {item}" for item in repair_plan] if repair_plan else ["- 无"]
-        generated_test = rr.get("generated_test") or {}
-        generated_test_lines = self._generated_test_detail_lines(generated_test)
-        lines = [
+        
+        # 1. 概览 (Overview)
+        overview_lines = [
             f"事件 ID: {data.get('incident_id', '')}",
             f"目标服务: {data.get('target', '')}",
             f"状态: {status_label(data.get('status', ''))}",
             f"处理结论: {disposition_label(data.get('disposition') or rr.get('disposition'))}",
-            f"根因类型: {root_cause_label(data.get('root_cause_type') or rr.get('root_cause_type'))}",
             f"风险等级: {risk_label(data.get('risk_level') or rr.get('risk_level'))}",
             f"PR: {data.get('pr_url') or rr.get('pr_url') or '未创建'}",
             "",
             "摘要:",
             summary,
             "",
+            "人工处理建议:",
+            *([f"- {item}" for item in (data.get("human_resolution_steps") or rr.get("human_resolution_steps") or ["无"])]),
+        ]
+        self.tab_overview.insert(tk.END, "\n".join(overview_lines))
+
+        # 2. 分析与计划 (Analysis)
+        analysis_lines = [
+            f"根因类型: {root_cause_label(data.get('root_cause_type') or rr.get('root_cause_type'))}",
+            "",
             "修复思路:",
-            *repair_plan_lines,
+            *([f"- {item}" for item in repair_plan] if repair_plan else ["- 无"]),
+            "",
+            "证据:",
+            *([f"- {item}" for item in (data.get("evidence") or rr.get("evidence") or [])]),
+        ]
+        self.tab_analysis.insert(tk.END, "\n".join(analysis_lines))
+
+        # 3. 补丁与验证 (Patch)
+        generated_test = rr.get("generated_test") or {}
+        generated_test_lines = self._generated_test_detail_lines(generated_test)
+        
+        patch_lines = [
+            "补丁文件:",
+            *([f"- {f}" for f in (rr.get("changed_files") or ["无"])]),
             "",
             "自动生成测试说明:",
             *generated_test_lines,
-            "",
-            "证据:",
-            *[f"- {item}" for item in (data.get("evidence") or rr.get("evidence") or [])],
-            "",
-            "人工处理建议:",
-            *[f"- {item}" for item in (data.get("human_resolution_steps") or rr.get("human_resolution_steps") or ["无"])],
-            "",
-            "工具调用:",
         ]
+        self.tab_patch.insert(tk.END, "\n".join(patch_lines))
+
+        # 4. 工具调用 (Tools)
+        tool_lines = []
         for tool in data.get("tool_calls", []):
-            lines.append(f"- {tool.get('name')}: {tool.get('status')} - {tool.get('summary')}")
-        self.record_detail.insert(tk.END, "\n".join(lines))
-        self.record_detail.configure(state=tk.DISABLED)
+            tool_lines.append(f"[{tool.get('status')}] {tool.get('name')}:\n  {tool.get('summary')}\n")
+        if not tool_lines:
+            tool_lines.append("无工具调用记录")
+            
+        self.tab_tools.insert(tk.END, "\n".join(tool_lines))
+
+        for tab in [self.tab_overview, self.tab_analysis, self.tab_patch, self.tab_tools]:
+            tab.configure(state=tk.DISABLED)
 
     def _generated_test_detail_lines(self, generated_test: dict) -> list[str]:
         if not generated_test or not generated_test.get("attempted"):
@@ -884,6 +1001,148 @@ class AgentFixGUI(tk.Tk):
         if path:
             variable.set(path)
 
+    # ================= Tray and Toast Methods =================
+
+    def create_image(self):
+        image = Image.new('RGB', (64, 64), color=(44, 62, 80))
+        dc = ImageDraw.Draw(image)
+        dc.rectangle([(16, 16), (48, 48)], fill=(46, 204, 113))
+        return image
+
+    def hide_window(self):
+        # If background service is NOT enabled, clicking X should just quit the app normally
+        if not self.background_service_enabled.get():
+            self.quit_window()
+            return
+            
+        # Otherwise, hide to tray
+        self.withdraw()
+        if not self.icon:
+            menu = pystray.Menu(
+                pystray.MenuItem('显示面板 (Show)', self.show_window, default=True),
+                pystray.MenuItem('完全退出 (Quit)', self.quit_window)
+            )
+            self.icon = pystray.Icon("AgentFix", self.create_image(), "AgentFix 监控守护中", menu)
+            
+            # pystray has an issue on some Windows versions where run() crashes 
+            # if it receives certain unhandled window messages.
+            # Running it in a separate thread usually helps, but we must catch errors.
+            def run_icon():
+                try:
+                    self.icon.run()
+                except Exception as e:
+                    print(f"Tray icon error (ignored): {e}")
+
+            # Start tray icon in a separate thread so it doesn't block tkinter
+            threading.Thread(target=run_icon, daemon=True).start()
+            
+            # Start background service if not already started
+            if not self.agent_process:
+                self.start_background_service()
+
+    def show_window(self, icon=None, item=None):
+        if self.icon:
+            self.icon.stop()
+            self.icon = None
+        self.after(0, self.deiconify)
+
+    def quit_window(self, icon=None, item=None):
+        if self.icon:
+            self.icon.stop()
+        self.stop_background_service()
+        self.after(0, self.destroy)
+
+    def stop_background_service(self):
+        if self.agent_process:
+            try:
+                self.agent_process.terminate()
+                self.agent_process.wait(timeout=3)
+            except Exception:
+                self.agent_process.kill()
+            self.agent_process = None
+
+    def start_background_service(self):
+        def run_service():
+            try:
+                env = os.environ.copy()
+                src_path = os.path.abspath("src")
+                if "PYTHONPATH" in env:
+                    env["PYTHONPATH"] = f"{src_path}{os.pathsep}{env['PYTHONPATH']}"
+                else:
+                    env["PYTHONPATH"] = src_path
+                    
+                self.agent_process = subprocess.Popen(
+                    [sys.executable, "-m", "agentfix", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+                )
+            except Exception as e:
+                print(f"Failed to start background service: {e}")
+                
+        threading.Thread(target=run_service, daemon=True).start()
+
+    def auto_locate_repo(self) -> None:
+        repo_input = self.target_vars["repo_full_name"].get().strip()
+        if not repo_input:
+            messagebox.showwarning("提示", "请先填写远程仓库链接或名称 (如 owner/repo 或 https://github.com/...)")
+            return
+        
+        workspace = ""
+        if ("runtime", "workspace_root") in self.form_vars:
+            workspace = self.form_vars[("runtime", "workspace_root")].get().strip()
+        if not workspace:
+            workspace = get_nested(self.config_data, ("runtime", "workspace_root"), "")
+            
+        if not workspace or not Path(workspace).exists():
+            messagebox.showwarning("提示", "请先在 [配置中心] -> [运行与验证] 中配置有效的 [本地代码工作区 (Workspace)]")
+            self.show_page("config")
+            return
+            
+        repo_name = repo_input.split("/")[-1].replace(".git", "")
+        workspace_path = Path(workspace)
+        
+        found_path = None
+        queue = deque([(workspace_path, 0)])
+        while queue and not found_path:
+            current_dir, depth = queue.popleft()
+            if depth > 2:
+                continue
+            try:
+                for child in current_dir.iterdir():
+                    if child.is_dir():
+                        if child.name.lower() == repo_name.lower() and (child / ".git").exists():
+                            found_path = child
+                            break
+                        if child.name not in {".git", "node_modules", "venv", ".idea"}:
+                            queue.append((child, depth + 1))
+            except PermissionError:
+                continue
+
+        if found_path:
+            self.target_vars["repo_path"].set(str(found_path))
+            messagebox.showinfo("定位成功", f"已在工作区找到仓库并填充路径：\n{found_path}")
+        else:
+            if messagebox.askyesno("未找到仓库", f"在工作区内未找到 {repo_name}，是否立即从远程克隆到该目录？\n目标路径: {workspace_path / repo_name}"):
+                self._clone_repo(repo_input, workspace_path / repo_name)
+
+    def _clone_repo(self, repo_url_or_name: str, target_dir: Path) -> None:
+        clone_url = repo_url_or_name
+        if not clone_url.startswith("http") and not clone_url.startswith("git@"):
+            clone_url = f"https://github.com/{repo_url_or_name}.git"
+            
+        def worker():
+            try:
+                subprocess.run(["git", "clone", clone_url, str(target_dir)], capture_output=True, text=True, check=True)
+                if hasattr(self, "target_vars") and "repo_path" in self.target_vars:
+                    self.after(0, lambda: self.target_vars["repo_path"].set(str(target_dir)))
+                    self.after(0, lambda: messagebox.showinfo("克隆成功", f"成功克隆仓库到：\n{target_dir}"))
+            except subprocess.CalledProcessError as e:
+                self.after(0, lambda: messagebox.showerror("克隆失败", f"Git Clone 失败:\n{e.stderr}"))
+        
+        threading.Thread(target=worker, daemon=True).start()
+        messagebox.showinfo("正在克隆", f"正在后台克隆 {clone_url}...\n请稍候，克隆完成后会自动填充路径。")
 
 if __name__ == "__main__":
     app = AgentFixGUI()
