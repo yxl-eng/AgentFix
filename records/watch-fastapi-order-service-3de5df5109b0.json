@@ -1,0 +1,140 @@
+{
+  "incident_id": "watch-fastapi-order-service-3de5df5109b0",
+  "target": "fastapi-order-service",
+  "source": "log_watch",
+  "status": "ignored",
+  "message": "日志虽然包含 error 字样，但更像预期内的客户端或业务拒绝行为。",
+  "pr_url": null,
+  "record_json_path": "C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\records\\watch-fastapi-order-service-3de5df5109b0.json",
+  "record_markdown_path": "C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\records\\watch-fastapi-order-service-3de5df5109b0.md",
+  "repair_result": {
+    "root_cause_summary": "日志虽然包含 error 字样，但更像预期内的客户端或业务拒绝行为。",
+    "changed_files": [],
+    "diff_summary": "",
+    "syntax_check": false,
+    "tests_run": [],
+    "pr_url": null,
+    "status": "ignored",
+    "analysis": null,
+    "validation": null,
+    "artifact_dir": null,
+    "branch": null,
+    "failure_reason": "没有发现 traceback 或崩溃标记，并且日志符合常见 4xx 或业务校验拒绝模式。",
+    "record_json_path": "C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\records\\watch-fastapi-order-service-3de5df5109b0.json",
+    "record_markdown_path": "C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\records\\watch-fastapi-order-service-3de5df5109b0.md",
+    "feishu_notified": false,
+    "generated_test": null,
+    "disposition": "ignored",
+    "decision_reason": "没有发现 traceback 或崩溃标记，并且日志符合常见 4xx 或业务校验拒绝模式。",
+    "evidence": [
+      "service=fastapi-order-service env=local level=error request_id=ops-1777885891042 method=POST path=/ops/scenarios/ignored user_id=user-1 scenario=ignored Error http 404 expected business rejection path=/orders/missing reason=customer_opened_deleted_order",
+      "target_repo=C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\demo_services\\fastapi-order-service",
+      "repo_path_exists=true",
+      "git_branch=main",
+      "service_log_file_exists=true",
+      "test_commands=[\"python -m pytest tests\"]",
+      "healthcheck_url=http://127.0.0.1:8770/health"
+    ],
+    "tool_plan": [
+      "Read Log",
+      "Record Repair"
+    ],
+    "root_cause_type": "benign_log",
+    "risk_level": "low",
+    "human_action_required": false,
+    "human_resolution_steps": [],
+    "planner_decision": {
+      "disposition": "ignored",
+      "root_cause_type": "benign_log",
+      "risk_level": "low",
+      "confidence": 0.75,
+      "summary": "日志虽然包含 error 字样，但更像预期内的客户端或业务拒绝行为。",
+      "decision_reason": "没有发现 traceback 或崩溃标记，并且日志符合常见 4xx 或业务校验拒绝模式。",
+      "evidence": [
+        "service=fastapi-order-service env=local level=error request_id=ops-1777885891042 method=POST path=/ops/scenarios/ignored user_id=user-1 scenario=ignored Error http 404 expected business rejection path=/orders/missing reason=customer_opened_deleted_order",
+        "target_repo=C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\demo_services\\fastapi-order-service",
+        "repo_path_exists=true",
+        "git_branch=main",
+        "service_log_file_exists=true",
+        "test_commands=[\"python -m pytest tests\"]",
+        "healthcheck_url=http://127.0.0.1:8770/health"
+      ],
+      "tool_plan": [
+        "Read Log",
+        "Record Repair"
+      ],
+      "human_action_required": false,
+      "human_resolution_steps": []
+    },
+    "repair_iterations": []
+  },
+  "tool_calls": [
+    {
+      "name": "Read Log",
+      "status": "success",
+      "summary": "已读取 254 个日志字符。",
+      "inputs": {
+        "source": "log_watch",
+        "target": "fastapi-order-service",
+        "log_file": null
+      },
+      "outputs": {
+        "incident_id": "watch-fastapi-order-service-3de5df5109b0"
+      }
+    },
+    {
+      "name": "Incident Planner",
+      "status": "success",
+      "summary": "ignored: 日志虽然包含 error 字样，但更像预期内的客户端或业务拒绝行为。",
+      "inputs": {},
+      "outputs": {
+        "disposition": "ignored",
+        "root_cause_type": "benign_log",
+        "risk_level": "low",
+        "confidence": 0.75,
+        "decision_reason": "没有发现 traceback 或崩溃标记，并且日志符合常见 4xx 或业务校验拒绝模式。",
+        "tool_plan": [
+          "Read Log",
+          "Record Repair"
+        ],
+        "human_action_required": false
+      }
+    },
+    {
+      "name": "Record Repair",
+      "status": "success",
+      "summary": "已写入事件分诊 JSON 和 Markdown 记录。",
+      "inputs": {},
+      "outputs": {
+        "json": "C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\records\\watch-fastapi-order-service-3de5df5109b0.json",
+        "markdown": "C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\records\\watch-fastapi-order-service-3de5df5109b0.md"
+      }
+    },
+    {
+      "name": "Notify Feishu",
+      "status": "skipped",
+      "summary": "已根据 agent.report 配置跳过通知。",
+      "inputs": {},
+      "outputs": {}
+    }
+  ],
+  "disposition": "ignored",
+  "decision_reason": "没有发现 traceback 或崩溃标记，并且日志符合常见 4xx 或业务校验拒绝模式。",
+  "evidence": [
+    "service=fastapi-order-service env=local level=error request_id=ops-1777885891042 method=POST path=/ops/scenarios/ignored user_id=user-1 scenario=ignored Error http 404 expected business rejection path=/orders/missing reason=customer_opened_deleted_order",
+    "target_repo=C:\\Users\\86137\\Desktop\\Feishu_code_reviewer\\demo_services\\fastapi-order-service",
+    "repo_path_exists=true",
+    "git_branch=main",
+    "service_log_file_exists=true",
+    "test_commands=[\"python -m pytest tests\"]",
+    "healthcheck_url=http://127.0.0.1:8770/health"
+  ],
+  "tool_plan": [
+    "Read Log",
+    "Record Repair"
+  ],
+  "root_cause_type": "benign_log",
+  "risk_level": "low",
+  "human_action_required": false,
+  "human_resolution_steps": []
+}
