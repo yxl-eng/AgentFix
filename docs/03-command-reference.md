@@ -88,17 +88,17 @@ POST /webhooks/incidents
 ```json
 {
   "target": "my-service",
-  "incident_id": "demo-001",
   "log_text": "TypeError: Cannot read properties of undefined\n    at getUser (src/app.ts:10:5)"
 }
 ```
+
+如果没有传 `incident_id`，Agent 会自动生成 `<target>-YYYYMMDD-HHMMSS-mmm` 格式的事件 ID。显式传入 `incident_id` 时仍会优先使用调用方提供的值。
 
 也可以传 target 仓库内的日志文件：
 
 ```json
 {
   "target": "my-service",
-  "incident_id": "demo-002",
   "log_file": "logs/error.log"
 }
 ```
@@ -127,7 +127,6 @@ POST /webhooks/github
 ```powershell
 $body = @{
   target = "my-service"
-  incident_id = "demo-001"
   log_text = "TypeError: boom at src/app.ts:10"
 } | ConvertTo-Json
 

@@ -5,7 +5,7 @@
 测试分三层，不要一上来就跑完整链路：
 
 - PatchPilot 本体测试：确认 CLI、配置、单元测试可用。
-- Demo 服务测试：确认 `fastapi-order-service` 本身能启动、能复现 bug、能产生日志。
+- Demo 服务测试：确认 `order-fulfillment-service` 本身能启动、能复现 bug、能产生日志。
 - 完整 Agent 流程测试：通过 webhook、watch 或 GitHub issue 触发自动修复。
 
 ## 1. 前置检查
@@ -31,8 +31,8 @@ patchpilot doctor
 - `openai_api_key_present: true`：大模型 key 已配置。
 - `github_token_present: true`：需要创建 PR 时必须为 true。
 - `feishu_webhook_present: true`：需要飞书通知时必须为 true。
-- `targets` 里包含 `fastapi-order-service`。
-- `generated_test_targets` 里包含 `fastapi-order-service`。
+- `targets` 里包含 `order-fulfillment-service`。
+- `generated_test_targets` 里包含 `order-fulfillment-service`。
 
 ## 2. 运行 PatchPilot 本体测试
 
@@ -118,7 +118,7 @@ git push -u origin main
 
 ```yaml
 targets:
-  fastapi-order-service:
+  order-fulfillment-service:
     repo_full_name: <owner>/<repo>
     repo_path: demo_services/fastapi-order-service
     base_branch: main
@@ -173,7 +173,7 @@ patchpilot serve --host 127.0.0.1 --port 8080 --watch
 
 ```powershell
 $body = @{
-  target = "fastapi-order-service"
+  target = "order-fulfillment-service"
   incident_id = "fastapi-order-v3-001"
   log_file = "logs/incident.log"
   request_context = @{
@@ -274,7 +274,7 @@ Get-Content .\logs\incident.log -Raw | Add-Content .\logs\app.log
 
 要求：
 
-- `patchpilot.yaml` 中 `targets.fastapi-order-service.repo_full_name` 必须等于 payload 里的 `repository.full_name`。
+- `patchpilot.yaml` 中 `targets.order-fulfillment-service.repo_full_name` 必须等于 payload 里的 `repository.full_name`。
 - issue 必须带 `bug` 标签。
 - issue body 里要有 traceback 或错误日志。
 
@@ -354,7 +354,7 @@ python -m pip install -e ".[dev]"
 检查：
 
 - 触发方式是不是走 `patchpilot serve` 的 target。当前 V3 生成测试依赖 target 配置；直接 `patchpilot run --repo ...` 更适合做 V2 本地 smoke test。
-- `targets.fastapi-order-service.generated_tests.enabled` 是否为 `true`。
+- `targets.order-fulfillment-service.generated_tests.enabled` 是否为 `true`。
 - `record.generated_test.fallback_reason` 写了什么。
 
 ### PR 没创建

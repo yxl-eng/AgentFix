@@ -112,7 +112,7 @@ Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:8080/webhooks/incidents `
   -ContentType application/json `
-  -Body '{"target":"fastapi-order-service","incident_id":"order-incident-001","log_text":"TypeError: boom at app/services.py:42"}'
+  -Body '{"target":"order-fulfillment-service","log_text":"service=order-fulfillment-service env=local TypeError: boom at app/services.py:42"}'
 ```
 
 ## 订单履约运营服务

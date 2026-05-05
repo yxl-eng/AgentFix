@@ -115,8 +115,8 @@ agent:
 
 ```yaml
 targets:
-  fastapi-order-service:
-    repo_full_name: your-name/fastapi-order-service
+  order-fulfillment-service:
+    repo_full_name: yxl-eng/GuardianAI_Demo2
     repo_path: demo_services/fastapi-order-service
     base_branch: main
     service_log_file: logs/app.log
@@ -226,7 +226,7 @@ patchpilot serve --host 127.0.0.1 --port 8080 --watch
 
 ```powershell
 $body = @{
-  target = "fastapi-order-service"
+  target = "order-fulfillment-service"
   incident_id = "fastapi-order-v4-001"
   log_text = Get-Content "demo_services\fastapi-order-service\logs\app.log" -Raw
 } | ConvertTo-Json -Depth 5

@@ -56,6 +56,25 @@ class EventStateStore:
             "updated_at": row[4],
         }
 
+    def delete_by_incident_id(self, incident_id: str) -> int:
+        deleted = 0
+        with self._connect() as connection:
+            rows = connection.execute("SELECT event_key, result_json FROM events").fetchall()
+            for event_key, result_json in rows:
+                try:
+                    result = json.loads(result_json or "{}")
+                except json.JSONDecodeError:
+                    result = {}
+                record = result.get("record") if isinstance(result, dict) else None
+                candidates = [
+                    result.get("incident_id") if isinstance(result, dict) else None,
+                    record.get("incident_id") if isinstance(record, dict) else None,
+                ]
+                if incident_id in candidates:
+                    connection.execute("DELETE FROM events WHERE event_key = ?", (event_key,))
+                    deleted += 1
+        return deleted
+
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(

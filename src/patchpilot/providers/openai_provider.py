@@ -79,6 +79,7 @@ class OpenAIResponsesProvider(StructuredModelProvider):
                     instructions=instructions,
                     prompt=prompt,
                     output_model=output_model,
+                    reasoning_effort=reasoning_effort,
                 )
             except Exception as exc:  # pragma: no cover
                 response_error = response_error or exc
@@ -91,6 +92,7 @@ class OpenAIResponsesProvider(StructuredModelProvider):
                     instructions=instructions,
                     prompt=prompt,
                     output_model=output_model,
+                    reasoning_effort=reasoning_effort,
                 )
             except Exception as exc:  # pragma: no cover
                 if response_error is not None:
@@ -140,6 +142,7 @@ class OpenAIResponsesProvider(StructuredModelProvider):
         instructions: str,
         prompt: str,
         output_model: type[T],
+        reasoning_effort: str | None = None,
     ) -> T:
         schema = json.dumps(output_model.model_json_schema(), ensure_ascii=False, indent=2)
         response = self.client.chat.completions.create(
@@ -149,6 +152,7 @@ class OpenAIResponsesProvider(StructuredModelProvider):
                     "role": "system",
                     "content": (
                         f"{instructions}\n"
+                        f"{self._reasoning_prompt_hint(reasoning_effort)}"
                         "Return only a valid JSON object. Do not include markdown fences or extra commentary."
                     ),
                 },
@@ -178,6 +182,7 @@ class OpenAIResponsesProvider(StructuredModelProvider):
         instructions: str,
         prompt: str,
         output_model: type[T],
+        reasoning_effort: str | None = None,
     ) -> T:
         if not self.base_url:
             raise ModelProviderError("REST chat completions fallback requires a configured base_url.")
@@ -189,6 +194,7 @@ class OpenAIResponsesProvider(StructuredModelProvider):
                     "role": "system",
                     "content": (
                         f"{instructions}\n"
+                        f"{self._reasoning_prompt_hint(reasoning_effort)}"
                         "Return only a valid JSON object. Do not include markdown fences or extra commentary."
                     ),
                 },
@@ -215,6 +221,19 @@ class OpenAIResponsesProvider(StructuredModelProvider):
         json_text = self._extract_json_object(content)
         data = json.loads(json_text)
         return output_model.model_validate(data)
+
+    def _reasoning_prompt_hint(self, reasoning_effort: str | None) -> str:
+        if not reasoning_effort:
+            return ""
+        descriptions = {
+            "low": "Use a light internal reasoning budget. Prefer fast, direct analysis.\n",
+            "medium": "Use a balanced internal reasoning budget. Check the main alternatives before answering.\n",
+            "high": "Use a deeper internal reasoning budget. Carefully inspect failure modes, edge cases, and validation risk.\n",
+        }
+        return descriptions.get(
+            reasoning_effort,
+            f"Use an internal reasoning budget appropriate for `{reasoning_effort}`.\n",
+        )
 
     @retry(
         stop=stop_after_attempt(3),
