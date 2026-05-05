@@ -482,11 +482,14 @@ class PatchPilotGUI(tk.Tk):
         def set_default_split() -> None:
             try:
                 body.update_idletasks()
-                body.sash_place(0, int(body.winfo_width() * 0.56), 0)
+                width = body.winfo_width()
+                if width < 100:
+                    width = max(1200, self.winfo_width(), self.winfo_screenwidth() // 2)
+                body.sash_place(0, int(width * 0.56), 0)
             except Exception:
                 pass
 
-        self.after_idle(set_default_split)
+        self.after(50, set_default_split)
 
     def _build_config_page(self) -> None:
         page = self.pages["config"]
@@ -1533,7 +1536,7 @@ class PatchPilotGUI(tk.Tk):
                 else:
                     env["PYTHONPATH"] = src_path
                     
-                self.agent_process = subprocess.Popen(
+                process = subprocess.Popen(
                     [sys.executable, "-m", "patchpilot", "serve", "--watch"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -1542,15 +1545,15 @@ class PatchPilotGUI(tk.Tk):
                 )
                 if generation != self._background_service_generation or not self.background_service_enabled.get():
                     try:
-                        self.agent_process.terminate()
-                        self.agent_process.wait(timeout=3)
+                        process.terminate()
+                        process.wait(timeout=3)
                     except Exception:
                         try:
-                            self.agent_process.kill()
+                            process.kill()
                         except Exception:
                             pass
-                    self.agent_process = None
                     return
+                self.agent_process = process
             except Exception as e:
                 print(f"Failed to start background service: {e}")
             finally:
