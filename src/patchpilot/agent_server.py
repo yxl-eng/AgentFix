@@ -2,8 +2,10 @@
 
 import hashlib
 import json
+import re
 import threading
 import time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -103,7 +105,7 @@ class AgentProcessor:
         tool_calls: list[ToolCallRecord] = []
         try:
             log_text = self._read_log(event, target_config)
-            incident_id = event.incident_id or self._hash_text(f"{event.target}:{log_text}")[:12]
+            incident_id = event.incident_id or self._build_incident_id(event.target)
             tool_calls.append(
                 ToolCallRecord(
                     name="Read Log",
@@ -275,7 +277,6 @@ class AgentProcessor:
                 source="log_watch",
                 target=target_name,
                 log_text=new_text,
-                incident_id=f"watch-{target_name}-{self._hash_text(new_text)[:12]}",
             )
             responses.append(self.process_event(event, target_config))
         return responses
@@ -408,6 +409,14 @@ class AgentProcessor:
 
     def _hash_text(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _build_incident_id(self, target_name: str) -> str:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+        return f"{self._slugify(target_name)}-{timestamp}"
+
+    def _slugify(self, value: str) -> str:
+        slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip("-")
+        return slug or "service"
 
     def _looks_like_error(self, text: str) -> bool:
         return any(marker in text for marker in ["Traceback", "Error", "Exception", "panic:", "FAILED"])

@@ -41,7 +41,7 @@ server:
 agent:
   planner:
     enabled: true
-    max_steps: 8
+    max_steps: 12
     allowed_tools:
       - Read Log
       - Inspect Config
@@ -62,8 +62,8 @@ agent:
     notify_on_needs_more_context: true
 
 targets:
-  fastapi-order-service:
-    repo_full_name: demo/fastapi-order-service
+  order-fulfillment-service:
+    repo_full_name: yxl-eng/GuardianAI_Demo2
     repo_path: demo_services/fastapi-order-service
     base_branch: main
     service_log_file: logs/app.log

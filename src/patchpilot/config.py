@@ -121,7 +121,7 @@ class GeneratedTestSettings(BaseModel):
 
 class PlannerSettings(BaseModel):
     enabled: bool = True
-    max_steps: int = 6
+    max_steps: int = 12
     allowed_tools: list[str] = Field(
         default_factory=lambda: [
             "Read Log",

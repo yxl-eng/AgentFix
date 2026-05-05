@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+import re
+
 from patchpilot.agent_server import AgentProcessor
 from patchpilot.config import AppConfig, RecordsSettings, TargetSettings
 from patchpilot.event_state import EventStateStore
@@ -89,6 +91,15 @@ def test_incident_webhook_processes_once_and_records_tool_calls(tmp_path) -> Non
     assert "Notify Feishu" in tool_names
     assert "Incident Planner" in tool_names
     assert first["record"]["disposition"] == "repair_attempt"
+
+
+def test_incident_webhook_without_id_uses_service_timestamp(tmp_path) -> None:
+    processor, _ = _processor(tmp_path)
+
+    response = processor.handle_incident_payload({"target": "svc", "log_text": "Traceback\nTypeError: boom"})
+
+    assert response["status"] == "fixed"
+    assert re.match(r"svc-\d{8}-\d{6}-\d{3}$", response["record"]["incident_id"])
 
 
 def test_github_webhook_only_processes_bug_issue_for_configured_repo(tmp_path) -> None:

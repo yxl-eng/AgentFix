@@ -1,7 +1,0 @@
-{
-  "branch": "agentfix/incident/attributeerror-20260426093602",
-  "commit_sha": "f2c3b4010d52a1f293e6ecb5123c80507cf75576",
-  "pr_url": "https://github.com/ssjsss/Debug-demo/pull/6",
-  "title": "[agentfix] AttributeError: The User model in models.py defines the email attribute, but repository.",
-  "body": "## Error Summary\n- Service: `unknown-service`\n- Environment: `unknown`\n- Exception: `AttributeError: 'User' object has no attribute 'email_address'`\n\n## Root Cause\nThe User model in models.py defines the email attribute, but repository.py line 66 incorrectly accesses email_address attribute, causing AttributeError.\n\n## Code Changes\n- `src/demo_service/repository.py`\n\n## Validation\n- `G:\\AgentFix\\.venv\\Scripts\\python.exe -m py_compile src/demo_service/repository.py` -> 0\n\n## Risk / Human Review\n- The User model in models.py clearly shows 'email' attribute, not 'email_address'\n- Tests indicate expected behavior: test_get_email_domain_success expects 'example.com'\n- No other files need changes since the bug is isolated to incorrect attribute reference\n"
-}

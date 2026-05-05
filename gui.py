@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import threading
+import ctypes
 from collections import deque
 from copy import deepcopy
 from datetime import datetime
@@ -35,14 +36,27 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from patchpilot.event_state import EventStateStore
 from patchpilot.localization import disposition_label, public_status, risk_label, root_cause_label, status_label
 
 
-APP_TITLE = "PatchPilot 桌面控制台"
+APP_TITLE = "PatchPilot"
 BASE_CONFIG = Path("patchpilot.yaml")
 LOCAL_CONFIG = Path("patchpilot.local.yaml")
 LEGACY_BASE_CONFIG = Path("agentfix.yaml")
 LEGACY_LOCAL_CONFIG = Path("agentfix.local.yaml")
+
+
+def enable_windows_dpi_awareness() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
 
 
 def load_yaml(path: Path) -> dict:
@@ -98,6 +112,12 @@ class ScrollFrame(ttk.Frame):
     def _resize_window(self, event) -> None:
         self.canvas.itemconfigure(self.window, width=event.width)
 
+    def reset_scroll(self) -> None:
+        self.canvas.update_idletasks()
+        self.canvas.coords(self.window, 0, 0)
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.canvas.yview_moveto(0)
+
     def _on_mousewheel(self, event) -> None:
         widget = self.winfo_containing(event.x_root, event.y_root)
         if not self._contains(widget):
@@ -122,8 +142,8 @@ class PatchPilotGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1280x820")
-        self.minsize(1120, 720)
+        self.geometry("1440x900")
+        self.minsize(1280, 800)
         self.configure(bg="#f7f8fb")
 
         self.base_config: dict = {}
@@ -138,10 +158,14 @@ class PatchPilotGUI(tk.Tk):
         self.secret_entries: dict[tuple[str, ...], ttk.Entry] = {}
         self.secret_buttons: dict[tuple[str, ...], ttk.Button] = {}
         self.check_refreshers: list[callable] = []
+        self.segmented_defaults: dict[tuple[str, ...], str] = {}
+        self.page_scrolls: dict[str, ScrollFrame] = {}
 
         # Background Service Variables
-        self.background_service_enabled = tk.BooleanVar(value=False)
+        self.background_service_enabled = tk.BooleanVar(value=True)
         self.agent_process = None
+        self._background_service_starting = False
+        self._background_service_generation = 0
 
         # Tray and Toast setup
         self.toaster = ToastNotifier() if ToastNotifier is not None else None
@@ -153,32 +177,51 @@ class PatchPilotGUI(tk.Tk):
         self._build_shell()
         self.show_page("dashboard")
         self.refresh_all()
+        if self.background_service_enabled.get():
+            self.start_background_service()
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
         themes = set(style.theme_names())
         if "clam" in themes:
             style.theme_use("clam")
-            
-        style.configure(".", font=("Microsoft YaHei UI", 10))
+
+        self.option_add("*Font", "{Microsoft YaHei UI} 10")
+        base_font = ("Microsoft YaHei UI", 10)
+        text_font = ("Microsoft YaHei UI", 10)
+        title_font = ("Microsoft YaHei UI", 30, "bold")
+        card_title_font = ("Microsoft YaHei UI", 11, "bold")
+
+        style.configure(".", font=base_font)
         style.configure("TFrame", background="#f7f8fb")
         style.configure("Card.TFrame", background="#ffffff", relief="flat")
         style.configure("Sidebar.TFrame", background="#ffffff")
-        style.configure("Title.TLabel", background="#f7f8fb", foreground="#1f2329", font=("Microsoft YaHei UI", 20, "bold"))
-        style.configure("Subtitle.TLabel", background="#f7f8fb", foreground="#646a73", font=("Microsoft YaHei UI", 10))
-        style.configure("CardTitle.TLabel", background="#ffffff", foreground="#1f2329", font=("Microsoft YaHei UI", 12, "bold"))
-        style.configure("Muted.TLabel", background="#ffffff", foreground="#646a73")
+        style.configure("Header.TFrame", background="#f3f6fb")
+        style.configure("Title.TLabel", background="#f3f6fb", foreground="#1f2329", font=title_font)
+        style.configure("HeaderSubtitle.TLabel", background="#f3f6fb", foreground="#646a73", font=("Microsoft YaHei UI", 10))
+        style.configure("Subtitle.TLabel", background="#f7f8fb", foreground="#646a73", font=text_font)
+        style.configure("FormLabel.TLabel", background="#f7f8fb", foreground="#4e5969", font=text_font)
+        style.configure("CardTitle.TLabel", background="#ffffff", foreground="#1f2329", font=card_title_font)
+        style.configure("Muted.TLabel", background="#ffffff", foreground="#646a73", font=text_font)
         style.configure("SidebarTitle.TLabel", background="#ffffff", foreground="#1f2329", font=("Microsoft YaHei UI", 16, "bold"))
         style.configure("SidebarSub.TLabel", background="#ffffff", foreground="#646a73", font=("Microsoft YaHei UI", 9))
         
         # Modern Button Styles
-        style.configure("TButton", background="#ffffff", foreground="#1f2329", bordercolor="#d0d3d6", lightcolor="#ffffff", darkcolor="#ffffff", borderwidth=1, focuscolor="#ffffff", padding=(12, 6))
+        style.configure("TButton", font=base_font, background="#ffffff", foreground="#1f2329", bordercolor="#d0d3d6", lightcolor="#ffffff", darkcolor="#ffffff", borderwidth=1, focuscolor="#ffffff", padding=(12, 7))
         style.map("TButton", background=[("active", "#f2f3f5"), ("pressed", "#e5e6eb")])
         
-        style.configure("Primary.TButton", background="#3370ff", foreground="#ffffff", bordercolor="#3370ff", lightcolor="#3370ff", darkcolor="#3370ff", borderwidth=1, focuscolor="#3370ff", padding=(12, 6))
+        style.configure("Primary.TButton", font=base_font, background="#3370ff", foreground="#ffffff", bordercolor="#3370ff", lightcolor="#3370ff", darkcolor="#3370ff", borderwidth=1, focuscolor="#3370ff", padding=(12, 7))
         style.map("Primary.TButton", background=[("active", "#1e5def"), ("pressed", "#1043c7")])
-        
-        style.configure("Treeview", rowheight=34, fieldbackground="#ffffff", background="#ffffff")
+
+        style.configure("TEntry", padding=(8, 6), fieldbackground="#ffffff", bordercolor="#d9dee8", lightcolor="#ffffff", darkcolor="#ffffff")
+        style.configure("TCombobox", padding=(8, 6), fieldbackground="#ffffff", background="#ffffff", bordercolor="#d9dee8", lightcolor="#ffffff", darkcolor="#ffffff", arrowsize=14)
+        style.map("TCombobox", fieldbackground=[("readonly", "#ffffff")], selectbackground=[("readonly", "#ffffff")], selectforeground=[("readonly", "#1f2329")])
+
+        style.configure("TNotebook", background="#ffffff", borderwidth=0)
+        style.configure("TNotebook.Tab", font=("Microsoft YaHei UI", 9, "bold"), padding=(12, 8), background="#f7f8fb", foreground="#646a73")
+        style.map("TNotebook.Tab", background=[("selected", "#ffffff"), ("active", "#edf3ff")], foreground=[("selected", "#3370ff"), ("active", "#3370ff")])
+
+        style.configure("Treeview", font=text_font, rowheight=34, fieldbackground="#ffffff", background="#ffffff", foreground="#1f2329", borderwidth=0)
         style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 10, "bold"), background="#f7f9fc", foreground="#646a73")
 
     def _build_shell(self) -> None:
@@ -237,13 +280,35 @@ class PatchPilotGUI(tk.Tk):
                 button.configure(bg="#edf3ff", fg="#3370ff", font=("Microsoft YaHei UI", 10, "bold"))
             else:
                 button.configure(bg="#ffffff", fg="#646a73", font=("Microsoft YaHei UI", 10))
+        scroll = self.page_scrolls.get(page)
+        if scroll is not None:
+            self.after_idle(scroll.reset_scroll)
 
     def make_header(self, parent, title: str, subtitle: str) -> ttk.Frame:
-        header = ttk.Frame(parent)
-        header.pack(fill=tk.X, padx=26, pady=(24, 16))
-        ttk.Label(header, text=title, style="Title.TLabel").pack(anchor=tk.W)
-        ttk.Label(header, text=subtitle, style="Subtitle.TLabel").pack(anchor=tk.W, pady=(6, 0))
-        return header
+        header_bg = "#f3f6fb"
+        header = tk.Frame(parent, bg=header_bg, highlightthickness=0)
+        header.pack(fill=tk.X, padx=26, pady=(18, 14))
+        actions = ttk.Frame(header, style="Header.TFrame")
+        actions.pack(side=tk.RIGHT, padx=18, pady=20)
+        title_area = tk.Frame(header, bg=header_bg)
+        title_area.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=24, pady=20)
+        tk.Label(
+            title_area,
+            text=title,
+            bg=header_bg,
+            fg="#1f2329",
+            font=("Microsoft YaHei UI", 30, "bold"),
+            anchor="w",
+        ).pack(anchor=tk.W)
+        tk.Label(
+            title_area,
+            text=subtitle,
+            bg=header_bg,
+            fg="#646a73",
+            font=("Microsoft YaHei UI", 10),
+            anchor="w",
+        ).pack(anchor=tk.W, pady=(8, 0))
+        return actions
 
     def make_card(self, parent, title: str | None = None, expand: bool = True) -> ttk.Frame:
         outer = tk.Frame(parent, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef")
@@ -278,83 +343,150 @@ class PatchPilotGUI(tk.Tk):
             self.metric_labels[key] = value
 
         card = self.make_card(page, "最近事故")
+        tree_wrap = ttk.Frame(card, style="Card.TFrame")
+        tree_wrap.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
         columns = ("incident_id", "target", "status", "disposition", "message")
-        self.dashboard_tree = ttk.Treeview(card, columns=columns, show="headings", height=8)
+        self.dashboard_tree = ttk.Treeview(tree_wrap, columns=columns, show="headings", height=8)
         for col, text, width in [
-            ("incident_id", "事件 ID", 180),
-            ("target", "目标服务", 160),
-            ("status", "状态", 120),
+            ("incident_id", "事件 ID", 260),
+            ("target", "目标服务", 190),
+            ("status", "状态", 100),
             ("disposition", "处理结论", 130),
-            ("message", "摘要", 520),
+            ("message", "摘要", 760),
         ]:
             self.dashboard_tree.heading(col, text=text)
-            self.dashboard_tree.column(col, width=width, stretch=col == "message")
-        self.dashboard_tree.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+            self.dashboard_tree.column(col, width=width, minwidth=90, stretch=col == "message")
+        dashboard_y = ttk.Scrollbar(tree_wrap, orient=tk.VERTICAL, command=self.dashboard_tree.yview)
+        dashboard_x = ttk.Scrollbar(tree_wrap, orient=tk.HORIZONTAL, command=self.dashboard_tree.xview)
+        self.dashboard_tree.configure(yscrollcommand=dashboard_y.set, xscrollcommand=dashboard_x.set)
+        self.dashboard_tree.grid(row=0, column=0, sticky="nsew")
+        dashboard_y.grid(row=0, column=1, sticky="ns")
+        dashboard_x.grid(row=1, column=0, sticky="ew")
+        tree_wrap.grid_rowconfigure(0, weight=1)
+        tree_wrap.grid_columnconfigure(0, weight=1)
 
     def _build_incidents_page(self) -> None:
         page = self.pages["incidents"]
         header = self.make_header(page, "事故记录", "查看每次事件的分诊结论、工具调用、PR 和人工处理建议")
         ttk.Button(header, text="刷新记录", style="Primary.TButton", command=self.refresh_records).pack(side=tk.RIGHT)
+        ttk.Button(header, text="删除选中记录", command=self.delete_current_record).pack(side=tk.RIGHT, padx=(0, 8))
 
-        body = ttk.Frame(page)
+        body = tk.PanedWindow(
+            page,
+            orient=tk.HORIZONTAL,
+            bg="#f7f8fb",
+            sashwidth=8,
+            sashrelief=tk.RAISED,
+            opaqueresize=True,
+            borderwidth=0,
+            showhandle=False,
+        )
         body.pack(fill=tk.BOTH, expand=True, padx=26, pady=8)
         left_outer = tk.Frame(body, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef")
-        left_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 12))
         left = ttk.Frame(left_outer, style="Card.TFrame")
         left.pack(fill=tk.BOTH, expand=True)
 
         filters = ttk.Frame(left, style="Card.TFrame")
         filters.pack(fill=tk.X, padx=14, pady=12)
-        
-        ttk.Label(filters, text="服务名搜索:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 4))
+        filters.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(filters, text="服务名搜索", style="Muted.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 8))
         self.incident_query = tk.StringVar()
         self.incident_status = tk.StringVar(value="全部")
-        ttk.Entry(filters, textvariable=self.incident_query, width=32).pack(side=tk.LEFT)
-        
-        ttk.Label(filters, text="状态筛选:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(16, 4))
+        ttk.Entry(filters, textvariable=self.incident_query).grid(row=0, column=1, columnspan=3, sticky="ew", pady=(0, 8))
+
+        ttk.Label(filters, text="状态筛选", style="Muted.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 8))
         ttk.Combobox(
             filters,
             textvariable=self.incident_status,
             values=["全部", "已修复", "需要人工验证", "需要人工处理", "已忽略"],
-            width=22,
+            width=16,
             state="readonly",
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(filters, text="筛选", command=self.render_incident_table).pack(side=tk.LEFT)
+        ).grid(row=1, column=1, sticky="w")
+        ttk.Button(filters, text="筛选", command=self.render_incident_table).grid(row=1, column=2, sticky="w", padx=(10, 0))
 
+        tree_wrap = ttk.Frame(left, style="Card.TFrame")
+        tree_wrap.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
         columns = ("incident_id", "target", "status", "disposition", "updated_at")
-        self.incidents_tree = ttk.Treeview(left, columns=columns, show="headings")
+        self.incidents_tree = ttk.Treeview(tree_wrap, columns=columns, show="headings")
         for col, text, width in [
-            ("incident_id", "事件 ID", 180),
-            ("target", "目标服务", 150),
-            ("status", "状态", 120),
+            ("incident_id", "事件 ID", 270),
+            ("target", "目标服务", 170),
+            ("status", "状态", 90),
             ("disposition", "结论", 120),
             ("updated_at", "更新时间", 150),
         ]:
             self.incidents_tree.heading(col, text=text)
-            self.incidents_tree.column(col, width=width, stretch=col == "incident_id")
-        self.incidents_tree.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
+            self.incidents_tree.column(col, width=width, minwidth=80, stretch=False)
+        yscroll = ttk.Scrollbar(tree_wrap, orient=tk.VERTICAL, command=self.incidents_tree.yview)
+        xscroll = ttk.Scrollbar(tree_wrap, orient=tk.HORIZONTAL, command=self.incidents_tree.xview)
+        self.incidents_tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        self.incidents_tree.grid(row=0, column=0, sticky="nsew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll.grid(row=1, column=0, sticky="ew")
+        tree_wrap.grid_rowconfigure(0, weight=1)
+        tree_wrap.grid_columnconfigure(0, weight=1)
         self.incidents_tree.bind("<<TreeviewSelect>>", self.on_record_selected)
 
-        right_outer = tk.Frame(body, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef", width=480)
-        right_outer.pack(side=tk.RIGHT, fill=tk.BOTH)
-        right_outer.pack_propagate(False)
+        right_outer = tk.Frame(body, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef")
         right = ttk.Frame(right_outer, style="Card.TFrame")
         right.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(right, text="事故详情", style="CardTitle.TLabel").pack(anchor=tk.W, padx=16, pady=(14, 8))
+        detail_header = ttk.Frame(right, style="Card.TFrame")
+        detail_header.pack(fill=tk.X, padx=16, pady=(14, 8))
+        ttk.Label(detail_header, text="事故详情", style="CardTitle.TLabel").pack(side=tk.LEFT, anchor=tk.W)
+        ttk.Button(detail_header, text="删除记录", command=self.delete_current_record).pack(side=tk.RIGHT)
         ttk.Separator(right).pack(fill=tk.X)
         
         self.detail_notebook = ttk.Notebook(right)
-        self.detail_notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        
-        self.tab_overview = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Microsoft YaHei UI", 10), padx=16, pady=14)
-        self.tab_analysis = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Microsoft YaHei UI", 10), padx=16, pady=14)
-        self.tab_patch = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Cascadia Mono", 10), padx=16, pady=14)
-        self.tab_tools = tk.Text(self.detail_notebook, wrap=tk.WORD, bd=0, bg="#ffffff", fg="#1f2329", font=("Cascadia Mono", 10), padx=16, pady=14)
-        
-        self.detail_notebook.add(self.tab_overview, text="概览")
-        self.detail_notebook.add(self.tab_analysis, text="分析与计划")
-        self.detail_notebook.add(self.tab_patch, text="补丁与验证")
-        self.detail_notebook.add(self.tab_tools, text="工具调用")
+        self.detail_notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        def detail_text_tab() -> tuple[ttk.Frame, tk.Text]:
+            frame = ttk.Frame(self.detail_notebook, style="Card.TFrame")
+            text = tk.Text(
+                frame,
+                wrap=tk.WORD,
+                bd=0,
+                bg="#fbfcff",
+                fg="#1f2329",
+                font=("Microsoft YaHei UI", 10),
+                padx=18,
+                pady=16,
+                spacing1=3,
+                spacing3=8,
+            )
+            text.tag_configure("section", foreground="#1f2329", font=("Microsoft YaHei UI", 11, "bold"), spacing1=10, spacing3=6)
+            text.tag_configure("label", foreground="#4e5969", font=("Microsoft YaHei UI", 10, "bold"))
+            text.tag_configure("muted", foreground="#646a73")
+            text.tag_configure("success", foreground="#20b26c", font=("Microsoft YaHei UI", 10, "bold"))
+            text.tag_configure("warning", foreground="#c97700", font=("Microsoft YaHei UI", 10, "bold"))
+            text.tag_configure("danger", foreground="#d92d20", font=("Microsoft YaHei UI", 10, "bold"))
+            text.tag_configure("bullet", lmargin1=18, lmargin2=32)
+            scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text.yview)
+            text.configure(yscrollcommand=scrollbar.set)
+            text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            return frame, text
+
+        self.tab_overview_frame, self.tab_overview = detail_text_tab()
+        self.tab_analysis_frame, self.tab_analysis = detail_text_tab()
+        self.tab_patch_frame, self.tab_patch = detail_text_tab()
+        self.tab_tools_frame, self.tab_tools = detail_text_tab()
+
+        self.detail_notebook.add(self.tab_overview_frame, text="概览")
+        self.detail_notebook.add(self.tab_analysis_frame, text="分析")
+        self.detail_notebook.add(self.tab_patch_frame, text="补丁")
+        self.detail_notebook.add(self.tab_tools_frame, text="工具")
+        body.add(left_outer, minsize=560, stretch="always")
+        body.add(right_outer, minsize=500, stretch="always")
+
+        def set_default_split() -> None:
+            try:
+                body.update_idletasks()
+                body.sash_place(0, int(body.winfo_width() * 0.56), 0)
+            except Exception:
+                pass
+
+        self.after_idle(set_default_split)
 
     def _build_config_page(self) -> None:
         page = self.pages["config"]
@@ -362,24 +494,40 @@ class PatchPilotGUI(tk.Tk):
         ttk.Button(header, text="保存到 local.yaml", style="Primary.TButton", command=self.save_global_config).pack(side=tk.RIGHT)
 
         scroll = ScrollFrame(page)
+        self.page_scrolls["config"] = scroll
         scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
         body = scroll.body
 
-        self._add_section(body, "模型与密钥")
+        self._add_section(body, "模型与外部服务密钥")
         self._add_entry(body, ("openai", "model"), "模型名称")
         self._add_secret(body, ("openai", "api_key"), "模型 / ARK API Key")
         self._add_entry(body, ("openai", "base_url"), "模型接口地址")
-        self._add_entry(body, ("openai", "transport"), "模型调用方式")
-        self._add_combo(body, ("openai", "analysis_reasoning_effort"), "分析推理强度", ["", "low", "medium", "high"])
-        self._add_combo(body, ("openai", "patch_reasoning_effort"), "修复推理强度", ["", "low", "medium", "high"])
+        self._add_combo(
+            body,
+            ("openai", "transport"),
+            "模型调用方式",
+            ["auto", "responses", "chat_completions", "rest_chat_completions"],
+        )
+        self._add_segmented(
+            body,
+            ("openai", "analysis_reasoning_effort"),
+            "分析推理强度",
+            [("low", "低"), ("medium", "中"), ("high", "高")],
+            default="medium",
+        )
+        self._add_segmented(
+            body,
+            ("openai", "patch_reasoning_effort"),
+            "修复推理强度",
+            [("low", "低"), ("medium", "中"), ("high", "高")],
+            default="high",
+        )
         self._add_secret(body, ("github", "token"), "GitHub 访问令牌")
         self._add_entry(body, ("github", "api_base_url"), "GitHub API 地址")
         self._add_secret(body, ("feishu", "webhook_url"), "飞书机器人地址")
         self._add_secret(body, ("feishu", "webhook_secret"), "飞书签名密钥")
 
-        self._add_section(body, "Agent Planner 与风控")
-        self._add_check(body, ("agent", "planner", "enabled"), "启用环境感知 Planner")
-        self._add_entry(body, ("agent", "planner", "max_steps"), "Planner 最大工具步数")
+        self._add_section(body, "Agent 决策与风控")
         self._add_entry(body, ("guardrails", "max_changed_files"), "最大修改文件数")
         self._add_entry(body, ("guardrails", "max_patch_lines"), "最大补丁行数")
         self._add_entry(body, ("guardrails", "min_confidence"), "最小分析置信度")
@@ -387,12 +535,12 @@ class PatchPilotGUI(tk.Tk):
         self._add_check(body, ("agent", "report", "notify_on_report_only"), "只报告事件发送飞书")
         self._add_check(body, ("agent", "report", "notify_on_needs_more_context"), "上下文不足事件发送飞书")
 
-        self._add_section(body, "运行与验证")
+        self._add_section(body, "运行、验证与记录")
         
         bg_row = ttk.Frame(body)
         bg_row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(bg_row, text="守护模式", width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
-        bg_btn = self._make_check(bg_row, self.background_service_enabled, "关闭窗口后，后台常驻监听 (Agent Serve)")
+        ttk.Label(bg_row, text="守护模式", width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
+        bg_btn = self._make_check(bg_row, self.background_service_enabled, "启动后自动常驻监听 (Agent Serve --watch)")
         
         def toggle_service():
             if not self.background_service_enabled.get() and hasattr(self, "stop_background_service"):
@@ -401,7 +549,7 @@ class PatchPilotGUI(tk.Tk):
         bg_btn.config(command=lambda: [self.background_service_enabled.set(not self.background_service_enabled.get()), self._refresh_checks(), toggle_service()])
         bg_btn.pack(side=tk.LEFT)
 
-        self._add_path_entry(body, ("runtime", "workspace_root"), "本地代码工作区 (Workspace)")
+        self._add_path_entry(body, ("runtime", "workspace_root"), "本地代码工作区")
         self._add_entry(body, ("runtime", "artifact_root"), "运行产物目录")
         self._add_entry(body, ("runtime", "max_repair_attempts"), "最大修复尝试次数")
         self._add_entry(body, ("server", "host"), "Agent 服务监听地址")
@@ -420,63 +568,97 @@ class PatchPilotGUI(tk.Tk):
         ttk.Button(header, text="保存目标服务", style="Primary.TButton", command=self.save_current_target).pack(side=tk.RIGHT)
         ttk.Button(header, text="新增目标服务", command=self.add_target).pack(side=tk.RIGHT, padx=(0, 8))
 
-        scroll = ScrollFrame(page)
-        scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
-        body = scroll.body
-        card = self.make_card(body, expand=False)
+        body = ttk.Frame(page)
+        body.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
 
-        top = ttk.Frame(card, style="Card.TFrame")
-        top.pack(fill=tk.X, padx=16, pady=16)
-        ttk.Label(top, text="选择目标服务", style="Muted.TLabel").pack(side=tk.LEFT)
+        top = ttk.Frame(body)
+        top.pack(fill=tk.X, padx=16, pady=(4, 10))
+        ttk.Label(top, text="选择目标服务", width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
         self.target_selector = ttk.Combobox(top, textvariable=self.current_target_name, state="readonly", width=34)
-        self.target_selector.pack(side=tk.LEFT, padx=10)
+        self.target_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.target_selector.bind("<<ComboboxSelected>>", lambda _event: self.load_target_form())
         ttk.Button(top, text="删除", command=self.delete_target).pack(side=tk.RIGHT)
         ttk.Button(top, text="复制", command=self.duplicate_target).pack(side=tk.RIGHT, padx=8)
 
-        form = ttk.Frame(card, style="Card.TFrame")
-        form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
+        form = ttk.Frame(body)
+        form.pack(fill=tk.BOTH, expand=True)
+        self._add_section(form, "仓库与日志")
         self._target_entry(form, "name", "目标服务名称")
-        self._target_action_entry(form, "repo_full_name", "远程仓库 (可选，无本地路径时填)", "自动定位/克隆", self.auto_locate_repo)
+        self._target_action_entry(form, "repo_full_name", "远程仓库", "自动定位/克隆", self.auto_locate_repo)
         self._target_path_entry(form, "repo_path", "本地仓库路径")
         self._target_entry(form, "base_branch", "PR 目标分支")
-        self._target_path_entry(form, "service_log_file", "服务日志文件 (本地Watch模式必填)", browse_type="file")
+        self._target_path_entry(form, "service_log_file", "服务日志文件", browse_type="file")
         self.refresh_target_selector()
 
     def _build_manual_page(self) -> None:
         page = self.pages["manual"]
         self.make_header(page, "手动运行", "直接选择本地仓库和日志文件，触发一次 PatchPilot 修复")
-        card = self.make_card(page, "运行参数")
-        
+        scroll = ScrollFrame(page)
+        self.page_scrolls["manual"] = scroll
+        scroll.pack(fill=tk.BOTH, expand=True, padx=26, pady=(0, 16))
+        body = scroll.body
+        self._add_section(body, "运行参数")
+
         self.manual_repo = tk.StringVar()
         self.manual_log = tk.StringVar()
         self.manual_branch = tk.StringVar(value="main")
         self.manual_no_pr = tk.BooleanVar(value=True)
-        self._row(card, "目标仓库", self.manual_repo, browse=lambda: self._browse_dir(self.manual_repo))
-        self._row(card, "日志文件", self.manual_log, browse=lambda: self._browse_file(self.manual_log))
-        self._row(card, "PR 目标分支", self.manual_branch)
-        self._make_check(card, self.manual_no_pr, "只验证，不创建 PR").pack(anchor=tk.W, padx=16, pady=8)
-        
-        action_frame = ttk.Frame(card)
+        self._row(body, "目标仓库", self.manual_repo, browse=lambda: self._browse_dir(self.manual_repo))
+        self._row(body, "日志文件", self.manual_log, browse=lambda: self._browse_file(self.manual_log))
+        self._row(body, "PR 目标分支", self.manual_branch)
+        self._make_check(body, self.manual_no_pr, "只验证，不创建 PR").pack(anchor=tk.W, padx=16, pady=8)
+
+        action_frame = ttk.Frame(body)
         action_frame.pack(fill=tk.X, padx=16, pady=10)
         self.btn_run_manual = ttk.Button(action_frame, text="开始运行", style="Primary.TButton", command=self.run_manual)
         self.btn_run_manual.pack(side=tk.LEFT)
         
         self.manual_status_label = ttk.Label(action_frame, text="当前进度: 闲置 (Idle)", style="Subtitle.TLabel")
         self.manual_status_label.pack(side=tk.LEFT, padx=(12, 0))
-        
-        self.manual_output = tk.Text(card, height=14, bg="#1f2329", fg="#dfe3eb", insertbackground="#ffffff", font=("Cascadia Mono", 10))
-        self.manual_output.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
+
+        self._add_section(body, "运行输出")
+        self.manual_output = tk.Text(
+            body,
+            height=16,
+            bg="#1f2329",
+            fg="#dfe3eb",
+            insertbackground="#ffffff",
+            font=("Cascadia Mono", 10),
+            relief=tk.FLAT,
+            padx=12,
+            pady=10,
+        )
+        self.manual_output.pack(fill=tk.X, padx=16, pady=(0, 16))
 
     def _add_section(self, parent, title: str) -> None:
-        frame = tk.Frame(parent, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e8ef")
-        frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(frame, text=title, style="CardTitle.TLabel").pack(anchor=tk.W, padx=16, pady=(12, 6))
+        frame = tk.Frame(parent, bg="#f7f8fb")
+        frame.pack(fill=tk.X, padx=16, pady=(18, 8))
+        accent = tk.Frame(frame, bg="#3370ff", width=4, height=22)
+        accent.pack(side=tk.LEFT, fill=tk.Y, pady=(2, 0))
+        tk.Label(
+            frame,
+            text=title,
+            bg="#f7f8fb",
+            fg="#1f2329",
+            font=("Microsoft YaHei UI", 13, "bold"),
+            anchor="w",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+
+    def _add_hint(self, parent, text: str) -> None:
+        tk.Label(
+            parent,
+            text=text,
+            bg="#f7f8fb",
+            fg="#8f959e",
+            anchor="w",
+            justify=tk.LEFT,
+            font=("Microsoft YaHei UI", 9),
+        ).pack(fill=tk.X, padx=(168, 16), pady=(0, 8))
 
     def _row(self, parent, label: str, variable: tk.StringVar, browse=None, show: str | None = None) -> ttk.Entry:
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        ttk.Label(row, text=label, width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
         entry = ttk.Entry(row, textvariable=variable, show=show or "")
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         if browse:
@@ -493,9 +675,56 @@ class PatchPilotGUI(tk.Tk):
         self.form_vars[path] = var
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
-        combo = ttk.Combobox(row, textvariable=var, values=values, state="readonly")
+        ttk.Label(row, text=label, width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
+        combo = ttk.Combobox(row, textvariable=var, values=values, state="readonly", height=min(8, len(values)))
         combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    def _add_segmented(
+        self,
+        parent,
+        path: tuple[str, ...],
+        label: str,
+        options: list[tuple[str, str]],
+        *,
+        default: str,
+    ) -> None:
+        var = tk.StringVar(value=default)
+        self.form_vars[path] = var
+        self.segmented_defaults[path] = default
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, padx=16, pady=6)
+        ttk.Label(row, text=label, width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
+        group = tk.Frame(row, bg="#dce2ee", highlightthickness=1, highlightbackground="#dce2ee")
+        group.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        buttons: list[tuple[tk.Button, str]] = []
+
+        def choose(value: str) -> None:
+            var.set(value)
+
+        for value, text in options:
+            button = tk.Button(
+                group,
+                text=text,
+                bd=0,
+                padx=16,
+                pady=7,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 10, "bold"),
+                command=lambda current=value: choose(current),
+            )
+            button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1, pady=1)
+            buttons.append((button, value))
+
+        def refresh(*_args) -> None:
+            selected = var.get() or default
+            for button, value in buttons:
+                if value == selected:
+                    button.configure(bg="#3370ff", fg="#ffffff", activebackground="#1e5def", activeforeground="#ffffff")
+                else:
+                    button.configure(bg="#ffffff", fg="#646a73", activebackground="#edf3ff", activeforeground="#3370ff")
+
+        var.trace_add("write", refresh)
+        refresh()
 
     def _add_path_entry(self, parent, path: tuple[str, ...], label: str, browse_type: str = "dir") -> None:
         var = tk.StringVar()
@@ -514,7 +743,7 @@ class PatchPilotGUI(tk.Tk):
         self.form_vars[path] = var
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        ttk.Label(row, text=label, width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
         entry = ttk.Entry(row, textvariable=var, show="*")
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         button = ttk.Button(row, text="预览", width=8, command=lambda p=path: self.toggle_secret_preview(p))
@@ -523,7 +752,7 @@ class PatchPilotGUI(tk.Tk):
         self.secret_buttons[path] = button
 
     def _add_text(self, parent, path: tuple[str, ...], label: str) -> None:
-        ttk.Label(parent, text=label, style="Subtitle.TLabel").pack(anchor=tk.W, padx=16, pady=(10, 4))
+        ttk.Label(parent, text=label, style="FormLabel.TLabel").pack(anchor=tk.W, padx=16, pady=(10, 4))
         text = tk.Text(parent, height=4, bg="#ffffff", fg="#1f2329", relief=tk.SOLID, bd=1, font=("Cascadia Mono", 10))
         text.pack(fill=tk.X, padx=16, pady=(0, 8))
         self.form_vars[path] = text
@@ -543,7 +772,7 @@ class PatchPilotGUI(tk.Tk):
         self.target_vars[key] = var
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        ttk.Label(row, text=label, width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
         entry = ttk.Entry(row, textvariable=var)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(row, text=button_text, command=action).pack(side=tk.LEFT, padx=(8, 0))
@@ -555,7 +784,7 @@ class PatchPilotGUI(tk.Tk):
         self._row(parent, label, var, browse=browse_cmd)
 
     def _target_text(self, parent, key: str, label: str) -> None:
-        ttk.Label(parent, text=label, style="Subtitle.TLabel").pack(anchor=tk.W, padx=16, pady=(10, 4))
+        ttk.Label(parent, text=label, style="FormLabel.TLabel").pack(anchor=tk.W, padx=16, pady=(10, 4))
         text = tk.Text(parent, height=5, bg="#ffffff", fg="#1f2329", relief=tk.SOLID, bd=1, font=("Cascadia Mono", 10))
         text.pack(fill=tk.X, padx=16, pady=(0, 8))
         self.target_vars[key] = text
@@ -570,7 +799,7 @@ class PatchPilotGUI(tk.Tk):
         self.target_vars[key] = var
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, padx=16, pady=6)
-        ttk.Label(row, text=label, width=26, style="Subtitle.TLabel").pack(side=tk.LEFT)
+        ttk.Label(row, text=label, width=22, style="FormLabel.TLabel").pack(side=tk.LEFT)
         combo = ttk.Combobox(row, textvariable=var, values=values, state="readonly")
         combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
@@ -629,6 +858,13 @@ class PatchPilotGUI(tk.Tk):
     def save_local_config(self) -> None:
         with LOCAL_CONFIG.open("w", encoding="utf-8") as handle:
             yaml.safe_dump(self.config_data, handle, allow_unicode=True, sort_keys=False)
+
+    def _apply_saved_config(self) -> None:
+        self.load_config()
+        self.refresh_records()
+        self.load_global_form()
+        self.refresh_target_selector()
+        self._restart_background_service_if_needed()
 
     def refresh_all(self) -> None:
         self.load_config()
@@ -691,6 +927,7 @@ class PatchPilotGUI(tk.Tk):
         
         for row in self.incidents_tree.get_children():
             self.incidents_tree.delete(row)
+        first_iid = None
         for item in self.records:
             if status_filter != "全部" and public_status(item.get("status")) != filter_key:
                 continue
@@ -699,7 +936,17 @@ class PatchPilotGUI(tk.Tk):
             if query and query not in target_name:
                 continue
                 
-            self.incidents_tree.insert("", tk.END, iid=item.get("incident_id"), values=self._record_values(item))
+            iid = item.get("incident_id")
+            self.incidents_tree.insert("", tk.END, iid=iid, values=self._record_values(item))
+            if first_iid is None:
+                first_iid = iid
+        if first_iid and not self.incidents_tree.selection():
+            self.incidents_tree.selection_set(first_iid)
+            self.incidents_tree.focus(first_iid)
+            self.on_record_selected()
+        elif first_iid is None:
+            self.current_record = None
+            self.render_record_detail()
 
     def _record_values(self, item: dict, include_message: bool = False) -> tuple:
         rr = item.get("repair_result") or {}
@@ -728,6 +975,13 @@ class PatchPilotGUI(tk.Tk):
             tab.delete("1.0", tk.END)
 
         data = self.current_record or {}
+        if not data:
+            self._detail_section(self.tab_overview, "请选择一条事故记录")
+            self._detail_text(self.tab_overview, "左侧列表会展示 records 目录中的 JSON 处理记录。")
+            for tab in [self.tab_overview, self.tab_analysis, self.tab_patch, self.tab_tools]:
+                tab.configure(state=tk.DISABLED)
+            return
+
         rr = data.get("repair_result") or {}
         summary = data.get("message", "")
         decision_reason = data.get("decision_reason") or rr.get("decision_reason")
@@ -736,60 +990,179 @@ class PatchPilotGUI(tk.Tk):
             
         analysis = rr.get("analysis") or {}
         repair_plan = analysis.get("repair_plan") or []
-        
-        # 1. 概览 (Overview)
-        overview_lines = [
-            f"事件 ID: {data.get('incident_id', '')}",
-            f"目标服务: {data.get('target', '')}",
-            f"状态: {status_label(data.get('status', ''))}",
-            f"处理结论: {disposition_label(data.get('disposition') or rr.get('disposition'))}",
-            f"风险等级: {risk_label(data.get('risk_level') or rr.get('risk_level'))}",
-            f"PR: {data.get('pr_url') or rr.get('pr_url') or '未创建'}",
-            "",
-            "摘要:",
-            summary,
-            "",
-            "人工处理建议:",
-            *([f"- {item}" for item in (data.get("human_resolution_steps") or rr.get("human_resolution_steps") or ["无"])]),
-        ]
-        self.tab_overview.insert(tk.END, "\n".join(overview_lines))
+        status = data.get("status", "")
+        public = public_status(status)
+        status_tag = {
+            "fixed": "success",
+            "ignored": "muted",
+            "needs_human_verification": "warning",
+            "needs_manual_intervention": "danger",
+        }.get(public)
 
-        # 2. 分析与计划 (Analysis)
-        analysis_lines = [
-            f"根因类型: {root_cause_label(data.get('root_cause_type') or rr.get('root_cause_type'))}",
-            "",
-            "修复思路:",
-            *([f"- {item}" for item in repair_plan] if repair_plan else ["- 无"]),
-            "",
-            "证据:",
-            *([f"- {item}" for item in (data.get("evidence") or rr.get("evidence") or [])]),
-        ]
-        self.tab_analysis.insert(tk.END, "\n".join(analysis_lines))
+        self._detail_section(self.tab_overview, "基本信息")
+        self._detail_kv(self.tab_overview, "事件 ID", data.get("incident_id", ""))
+        self._detail_kv(self.tab_overview, "目标服务", data.get("target", ""))
+        self._detail_kv(self.tab_overview, "来源", data.get("source", ""))
+        self._detail_kv(self.tab_overview, "状态", status_label(status), status_tag)
+        self._detail_kv(
+            self.tab_overview,
+            "处理结论",
+            disposition_label(data.get("disposition") or rr.get("disposition")),
+        )
+        self._detail_kv(self.tab_overview, "风险等级", risk_label(data.get("risk_level") or rr.get("risk_level")))
+        self._detail_kv(self.tab_overview, "更新时间", data.get("_updated_at", ""))
+        self._detail_kv(self.tab_overview, "PR", data.get("pr_url") or rr.get("pr_url") or "未创建")
+        self._detail_section(self.tab_overview, "摘要")
+        self._detail_text(self.tab_overview, summary or "无")
+        self._detail_section(self.tab_overview, "人工处理建议")
+        self._detail_list(self.tab_overview, data.get("human_resolution_steps") or rr.get("human_resolution_steps") or ["无"])
 
-        # 3. 补丁与验证 (Patch)
+        self._detail_section(self.tab_analysis, "根因与判断")
+        self._detail_kv(self.tab_analysis, "根因类型", root_cause_label(data.get("root_cause_type") or rr.get("root_cause_type")))
+        self._detail_kv(self.tab_analysis, "处理判断", decision_reason or "无")
+        self._detail_section(self.tab_analysis, "修复思路")
+        self._detail_list(self.tab_analysis, repair_plan or ["无"])
+        self._detail_section(self.tab_analysis, "证据")
+        self._detail_list(self.tab_analysis, data.get("evidence") or rr.get("evidence") or ["无"])
+
         generated_test = rr.get("generated_test") or {}
         generated_test_lines = self._generated_test_detail_lines(generated_test)
-        
-        patch_lines = [
-            "补丁文件:",
-            *([f"- {f}" for f in (rr.get("changed_files") or ["无"])]),
-            "",
-            "自动生成测试说明:",
-            *generated_test_lines,
-        ]
-        self.tab_patch.insert(tk.END, "\n".join(patch_lines))
+        validation = rr.get("validation") or {}
+        commands = validation.get("commands") or []
 
-        # 4. 工具调用 (Tools)
-        tool_lines = []
+        self._detail_section(self.tab_patch, "补丁文件")
+        self._detail_list(self.tab_patch, rr.get("changed_files") or ["无"])
+        self._detail_section(self.tab_patch, "验证命令")
+        if commands:
+            for command in commands:
+                command_text = command.get("command", "")
+                returncode = command.get("returncode")
+                tag = "success" if returncode == 0 else "danger"
+                self.tab_patch.insert(tk.END, f"- {command_text} -> {returncode}\n", ("bullet", tag))
+        else:
+            self._detail_list(self.tab_patch, ["无"])
+        self._detail_section(self.tab_patch, "自动生成测试")
+        self._detail_list(self.tab_patch, generated_test_lines)
+        if rr.get("failure_reason"):
+            self._detail_section(self.tab_patch, "失败原因")
+            self._detail_text(self.tab_patch, rr.get("failure_reason"))
+
+        self._detail_section(self.tab_tools, "工具调用记录")
         for tool in data.get("tool_calls", []):
-            tool_lines.append(f"[{tool.get('status')}] {tool.get('name')}:\n  {tool.get('summary')}\n")
-        if not tool_lines:
-            tool_lines.append("无工具调用记录")
-            
-        self.tab_tools.insert(tk.END, "\n".join(tool_lines))
+            status_text = tool.get("status") or "unknown"
+            tag = "success" if status_text == "success" else "warning" if status_text in {"warning", "skipped"} else "danger"
+            self.tab_tools.insert(tk.END, f"{tool.get('name') or 'Tool'}", "label")
+            self.tab_tools.insert(tk.END, f"  {status_text}\n", tag)
+            self.tab_tools.insert(tk.END, f"{tool.get('summary') or '无摘要'}\n\n", "muted")
+        if not data.get("tool_calls"):
+            self._detail_text(self.tab_tools, "无工具调用记录")
+
+        iterations = rr.get("repair_iterations") or []
+        if iterations:
+            self._detail_section(self.tab_tools, "迭代修复过程")
+            for item in iterations:
+                self.tab_tools.insert(tk.END, f"第 {item.get('attempt')} 轮：{item.get('status') or 'unknown'}\n", "label")
+                if item.get("patch_summary"):
+                    self.tab_tools.insert(tk.END, f"{item.get('patch_summary')}\n", "muted")
+                feedback = item.get("validation_feedback") or []
+                if feedback:
+                    self._detail_list(self.tab_tools, feedback)
+                self.tab_tools.insert(tk.END, "\n")
 
         for tab in [self.tab_overview, self.tab_analysis, self.tab_patch, self.tab_tools]:
             tab.configure(state=tk.DISABLED)
+
+    def _detail_section(self, widget: tk.Text, title: str) -> None:
+        widget.insert(tk.END, f"{title}\n", "section")
+
+    def _detail_kv(self, widget: tk.Text, label: str, value, value_tag: str | None = None) -> None:
+        widget.insert(tk.END, f"{label}: ", "label")
+        display = "无" if value is None or value == "" else value
+        if value_tag:
+            widget.insert(tk.END, f"{display}\n", value_tag)
+        else:
+            widget.insert(tk.END, f"{display}\n")
+
+    def _detail_text(self, widget: tk.Text, text) -> None:
+        display = "无" if text is None or text == "" else text
+        widget.insert(tk.END, f"{display}\n")
+
+    def _detail_list(self, widget: tk.Text, items) -> None:
+        values = list(items or ["无"])
+        for item in values:
+            widget.insert(tk.END, f"- {item}\n", "bullet")
+
+    def delete_current_record(self) -> None:
+        selected = self.incidents_tree.selection() if hasattr(self, "incidents_tree") else ()
+        record = None
+        if selected:
+            incident_id = selected[0]
+            record = next((item for item in self.records if item.get("incident_id") == incident_id), None)
+        record = record or self.current_record
+        if not record:
+            messagebox.showwarning("无法删除", "请先选择一条事故记录。")
+            return
+
+        incident_id = record.get("incident_id", "")
+        if not messagebox.askyesno("确认删除", f"确定删除事故记录 {incident_id} 吗？\n会删除对应 JSON 和 Markdown 文件。"):
+            return
+
+        paths = self._record_file_candidates(record)
+        deleted: list[str] = []
+        failed: list[str] = []
+        for path in paths:
+            try:
+                if path.exists() and path.is_file():
+                    path.unlink()
+                    deleted.append(str(path))
+            except OSError as exc:
+                failed.append(f"{path}: {exc}")
+        state_deleted = self._delete_event_state_for_record(str(incident_id))
+
+        self.current_record = None
+        self.refresh_records()
+        if failed:
+            messagebox.showwarning("部分删除失败", "\n".join(failed))
+        else:
+            messagebox.showinfo("删除成功", f"已删除 {len(deleted)} 个记录文件，并清理 {state_deleted} 条事件状态。")
+
+    def _record_file_candidates(self, record: dict) -> list[Path]:
+        records_root = Path(get_nested(self.config_data, ("records", "root"), "records")).resolve()
+        raw_paths = [
+            record.get("_path"),
+            record.get("record_json_path"),
+            (record.get("repair_result") or {}).get("record_json_path"),
+            record.get("record_markdown_path"),
+            (record.get("repair_result") or {}).get("record_markdown_path"),
+        ]
+        candidates: list[Path] = []
+        for raw_path in raw_paths:
+            if not raw_path:
+                continue
+            path = Path(raw_path)
+            if not path.is_absolute():
+                path = (Path.cwd() / path)
+            path = path.resolve()
+            if path.suffix not in {".json", ".md"}:
+                continue
+            try:
+                if not path.is_relative_to(records_root):
+                    continue
+            except ValueError:
+                continue
+            candidates.append(path)
+            if path.suffix == ".json":
+                candidates.append(path.with_suffix(".md"))
+        return list(dict.fromkeys(candidates))
+
+    def _delete_event_state_for_record(self, incident_id: str) -> int:
+        state_path = Path(get_nested(self.config_data, ("server", "state_path"), ".patchpilot-state/events.sqlite3"))
+        if not state_path.exists():
+            return 0
+        try:
+            return EventStateStore(state_path).delete_by_incident_id(incident_id)
+        except Exception:
+            return 0
 
     def _generated_test_detail_lines(self, generated_test: dict) -> list[str]:
         if not generated_test or not generated_test.get("attempted"):
@@ -820,7 +1193,10 @@ class PatchPilotGUI(tk.Tk):
             elif isinstance(widget, tk.BooleanVar):
                 widget.set(bool(value))
             else:
-                widget.set("" if value is None else str(value))
+                text_value = "" if value is None else str(value)
+                if path in self.segmented_defaults and text_value not in {"low", "medium", "high"}:
+                    text_value = self.segmented_defaults[path]
+                widget.set(text_value)
         for entry in self.secret_entries.values():
             entry.configure(show="*")
         for button in self.secret_buttons.values():
@@ -853,10 +1229,11 @@ class PatchPilotGUI(tk.Tk):
             set_nested(self.config_data, ("agent", "risk", "max_changed_files"), get_nested(self.config_data, ("guardrails", "max_changed_files"), 6))
             set_nested(self.config_data, ("agent", "risk", "max_changed_lines"), get_nested(self.config_data, ("guardrails", "max_patch_lines"), 600))
             self.save_local_config()
+            self._apply_saved_config()
         except ValueError as exc:
             messagebox.showerror("保存失败", f"数字字段格式错误：{exc}")
             return
-        messagebox.showinfo("保存成功", "配置已写入 patchpilot.local.yaml。服务 host/port 等改动重启后完全生效。")
+        messagebox.showinfo("保存成功", "配置已写入 patchpilot.local.yaml，并已即时生效。")
 
     def refresh_target_selector(self) -> None:
         if not hasattr(self, "target_selector"):
@@ -933,8 +1310,8 @@ class PatchPilotGUI(tk.Tk):
         self.config_data["targets"][name] = target
         self.current_target_name.set(name)
         self.save_local_config()
-        self.refresh_target_selector()
-        messagebox.showinfo("保存成功", "目标服务配置已写入 patchpilot.local.yaml。")
+        self._apply_saved_config()
+        messagebox.showinfo("保存成功", "目标服务配置已写入 patchpilot.local.yaml，并已即时生效。")
 
     def add_target(self) -> None:
         self.config_data.setdefault("targets", {})
@@ -985,7 +1362,7 @@ class PatchPilotGUI(tk.Tk):
         self.config_data.get("targets", {}).pop(name, None)
         self.current_target_name.set("")
         self.save_local_config()
-        self.refresh_target_selector()
+        self._apply_saved_config()
 
     def run_manual(self) -> None:
         repo = self.manual_repo.get().strip()
@@ -1105,10 +1482,7 @@ class PatchPilotGUI(tk.Tk):
 
             # Start tray icon in a separate thread so it doesn't block tkinter
             threading.Thread(target=run_icon, daemon=True).start()
-            
-            # Start background service if not already started
-            if not self.agent_process:
-                self.start_background_service()
+            self.start_background_service()
 
     def show_window(self, icon=None, item=None):
         if self.icon:
@@ -1123,6 +1497,7 @@ class PatchPilotGUI(tk.Tk):
         self.after(0, self.destroy)
 
     def stop_background_service(self):
+        self._background_service_generation += 1
         if self.agent_process:
             try:
                 self.agent_process.terminate()
@@ -1130,8 +1505,25 @@ class PatchPilotGUI(tk.Tk):
             except Exception:
                 self.agent_process.kill()
             self.agent_process = None
+        self._background_service_starting = False
+
+    def _restart_background_service_if_needed(self) -> None:
+        if not self.background_service_enabled.get():
+            return
+        self.stop_background_service()
+        self.start_background_service()
 
     def start_background_service(self):
+        if not self.background_service_enabled.get():
+            return
+        if self._background_service_starting:
+            return
+        if self.agent_process is not None and self.agent_process.poll() is None:
+            return
+        self._background_service_generation += 1
+        generation = self._background_service_generation
+        self._background_service_starting = True
+
         def run_service():
             try:
                 env = os.environ.copy()
@@ -1142,14 +1534,28 @@ class PatchPilotGUI(tk.Tk):
                     env["PYTHONPATH"] = src_path
                     
                 self.agent_process = subprocess.Popen(
-                    [sys.executable, "-m", "patchpilot", "serve"],
+                    [sys.executable, "-m", "patchpilot", "serve", "--watch"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=env,
                     creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
                 )
+                if generation != self._background_service_generation or not self.background_service_enabled.get():
+                    try:
+                        self.agent_process.terminate()
+                        self.agent_process.wait(timeout=3)
+                    except Exception:
+                        try:
+                            self.agent_process.kill()
+                        except Exception:
+                            pass
+                    self.agent_process = None
+                    return
             except Exception as e:
                 print(f"Failed to start background service: {e}")
+            finally:
+                if generation == self._background_service_generation:
+                    self._background_service_starting = False
                 
         threading.Thread(target=run_service, daemon=True).start()
 
@@ -1166,7 +1572,7 @@ class PatchPilotGUI(tk.Tk):
             workspace = get_nested(self.config_data, ("runtime", "workspace_root"), "")
             
         if not workspace or not Path(workspace).exists():
-            messagebox.showwarning("提示", "请先在 [配置中心] -> [运行与验证] 中配置有效的 [本地代码工作区 (Workspace)]")
+            messagebox.showwarning("提示", "请先在 [配置中心] -> [运行与验证] 中配置有效的 [本地代码工作区]")
             self.show_page("config")
             return
             
@@ -1215,5 +1621,6 @@ class PatchPilotGUI(tk.Tk):
         messagebox.showinfo("正在克隆", f"正在后台克隆 {clone_url}...\n请稍候，克隆完成后会自动填充路径。")
 
 if __name__ == "__main__":
+    enable_windows_dpi_awareness()
     app = PatchPilotGUI()
     app.mainloop()
