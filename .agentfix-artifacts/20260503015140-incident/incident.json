@@ -1,0 +1,22 @@
+{
+  "service_name": "unknown-service",
+  "environment": "unknown",
+  "log_text": "2026-04-15 14:26:02,456 - INFO - Processing email domain query\n2026-04-15 14:26:02,457 - INFO - Fetching user with id=1\n2026-04-15 14:26:02,458 - ERROR - Failed to extract email domain\nTraceback (most recent call last):\n  File \"src/demo_service/repository.py\", line 62, in get_user_email_domain\n    return user.email_address.split(\"@\")[1]  # type: ignore[attr-defined]\n           ^^^^^^^^^^^^^^^^\nAttributeError: 'User' object has no attribute 'email_address'\n2026-04-15 14:26:02,459 - INFO - Request failed with status 500",
+  "exception_type": "AttributeError",
+  "exception_message": "'User' object has no attribute 'email_address'",
+  "stack_frames": [
+    {
+      "file_path": "src/demo_service/repository.py",
+      "line_number": 62,
+      "function_name": "get_user_email_domain",
+      "code_line": "return user.email_address.split(\"@\")[1]  # type: ignore[attr-defined]",
+      "raw_frame": "File \"src/demo_service/repository.py\", line 62, in get_user_email_domain"
+    }
+  ],
+  "suspected_module": "repository",
+  "trigger_hint": "2026-04-15 14:26:02,456 - INFO - Processing email domain query | 2026-04-15 14:26:02,457 - INFO - Fetching user with id=1 | 2026-04-15 14:26:02,458 - ERROR - Failed to extract email domain",
+  "incident_id": "incident",
+  "occurred_at": "2026-04-15 14:26:02,456",
+  "request_context": null,
+  "expected_outcome": null
+}

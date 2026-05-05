@@ -1,0 +1,25 @@
+{
+  "syntax_check": false,
+  "tests_passed": false,
+  "commands": [
+    {
+      "command": "python3 -m py_compile src/demo_service/repository.py",
+      "returncode": 9009,
+      "stdout": "",
+      "stderr": "Python was not found but can be installed from the Microsoft Store: ms-windows-store://pdp/?productid=9NJ46SX7X90P"
+    },
+    {
+      "command": "python3 -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py",
+      "returncode": 9009,
+      "stdout": "",
+      "stderr": "Python was not found but can be installed from the Microsoft Store: ms-windows-store://pdp/?productid=9NJ46SX7X90P"
+    }
+  ],
+  "failure_summary": [
+    "Python syntax validation failed.",
+    "Test command failed: python3 -m pytest tests/test_repository.py tests/test_service.py tests/test_profile_service.py"
+  ],
+  "suggested_follow_up": [
+    "Review failing command output and retry with a narrower patch."
+  ]
+}
